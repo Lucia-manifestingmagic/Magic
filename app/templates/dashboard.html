@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ v.client.name }} — paid media</title>
+<link rel="stylesheet" href="{{ asset('dashboard.css') }}">
+</head>
+<body>
+
+{#- Renders a Metric: the number, or an em dash carrying the reason it is absent.
+    There is no code path here that turns a missing value into a zero. -#}
+{% macro m(metric, kind='money') -%}
+  {%- if metric is none or metric.value is none -%}
+    <span class="unknown" tabindex="0" role="button"
+          data-tip="{{ (metric.reason if metric else 'No data.') | e }}">—</span>
+  {%- elif kind == 'money' -%}{{ metric.value | money }}
+  {%- elif kind == 'money2' -%}{{ metric.value | money2 }}
+  {%- elif kind == 'pct' -%}{{ metric.value | percent }}
+  {%- elif kind == 'pct2' -%}{{ metric.value | percent(2) }}
+  {%- elif kind == 'ratio' -%}{{ metric.value | ratio }}
+  {%- elif kind == 'ratio1' -%}{{ metric.value | ratio(1) }}
+  {%- elif kind == 'num' -%}{{ metric.value | number }}
+  {%- elif kind == 'num1' -%}{{ metric.value | number(1) }}
+  {%- elif kind == 'compact' -%}{{ metric.value | compact }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro tip(text) -%}
+<button class="term" type="button" data-tip="{{ text | e }}" aria-label="What this means">?</button>
+{%- endmacro %}
+
+{% macro delta(metric, good='up') -%}
+  {%- if metric is none or metric.value is none -%}
+    <span class="delta delta-none" tabindex="0" role="button"
+          data-tip="{{ (metric.reason if metric else 'No data.') | e }}">—</span>
+  {%- else -%}
+    {%- set rising = metric.value > 0 -%}
+    {%- set is_good = (rising and good == 'up') or ((not rising) and good == 'down') -%}
+    {%- set tone = 'neutral' if good == 'neutral' else ('good' if is_good else 'bad') -%}
+    <span class="delta delta-{{ tone }}">{{ metric.value | signed_percent }}<span class="delta-note"> vs prior {{ v.window.days }}d</span></span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro state_icon(state) -%}
+<svg class="state-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+{%- if state == 'good' -%}
+  <path d="M3.5 8.5l3 3 6-6.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+{%- elif state == 'warning' -%}
+  <path d="M8 3v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="8" cy="12.5" r="1.15" fill="currentColor"/>
+{%- elif state == 'critical' -%}
+  <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+{%- else -%}
+  <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="2"/>
+{%- endif -%}
+</svg>
+{%- endmacro %}
+
+{% set state_words = {'good': 'On target', 'warning': 'Watch', 'critical': 'Off target', 'unknown': 'Not enough data'} %}
+
+<a class="skip" href="#verdict">Skip to the verdict</a>
+
+{% if v.data_mode == 'mock' %}
+<div class="banner banner-mock" role="status">
+  {% if v.client.demo %}
+  <strong>Portfolio demo.</strong> {{ v.client.tagline }}
+  Every figure is generated fixture data for a fictional wholesale distributor — no real advertiser, ad account or cost structure is represented here.
+  {% else %}
+  <strong>Mock data.</strong> Every number on this page is invented fixture data for building and demoing the layout.
+  No live ad account is connected yet. Set <code>LIVE_DATA=1</code> with credentials in <code>.env</code> to switch to real figures.
+  {% endif %}
+</div>
+{% endif %}
+
+<header class="topbar">
+  <div class="topbar-id">
+    <h1>{{ v.client.name }}</h1>
+    <p class="sub">Paid media · Meta and YouTube · {{ v.window.pretty }}</p>
+  </div>
+  <nav class="ranges" aria-label="Date range">
+    {% for r in v.ranges %}
+    <a class="range {{ 'is-selected' if r.selected }}" href="{{ range_href(r.key) }}"
+       {% if r.selected %}aria-current="page"{% endif %}>{{ r.label }}</a>
+    {% endfor %}
+  </nav>
+</header>
+
+<main>
+
+<!-- 1 ─────────────────────────────────────────── the verdict ───────────── -->
+<section id="verdict" class="section">
+  <div class="hero-row">
+    <div class="hero">
+      <p class="hero-label">
+        Blended cost per new account
+        {{ tip('Total spend across Meta and YouTube divided by the number of new accounts they produced in this period. Computed from period totals, not by averaging the daily figures.') }}
+      </p>
+      <p class="hero-figure hero-{{ v.blended.verdict.state }}">{{ m(v.blended.metrics.cac, 'money') }}</p>
+      <p class="hero-context">
+        Your cold-sales benchmark is <strong>{{ v.benchmarks.cac | money }}</strong> per account.
+        {% if v.blended.metrics.cac.value is not none %}
+          {% set gap = v.benchmarks.cac - v.blended.metrics.cac.value %}
+          {% if gap >= 0 %}
+            Paid media is <strong>{{ gap | money }} cheaper</strong> per account.
+          {% else %}
+            Paid media is <strong>{{ (-gap) | money }} more expensive</strong> per account.
+          {% endif %}
+        {% endif %}
+      </p>
+      <dl class="hero-support">
+        <div><dt>Spend</dt><dd>{{ m(v.blended.metrics.spend, 'money') }}</dd></div>
+        <div><dt>New accounts</dt><dd>{{ m(v.blended.metrics.conversions, 'num') }}</dd></div>
+        <div><dt>Payback {{ tip('How many months of gross profit it takes for one acquired account to repay what it cost to acquire, at $' ~ v.benchmarks.account_monthly_gp | int ~ ' gross profit per account per month.') }}</dt>
+             <dd>{{ m(v.blended.metrics.payback_months, 'num1') }} mo</dd></div>
+      </dl>
+    </div>
+
+    <div class="verdict-cards">
+      {% for ch in v.channels %}
+      <article class="card verdict-card state-{{ ch.verdict.state }}">
+        <header class="verdict-head">
+          <span class="channel-key"><span class="swatch swatch-{{ ch.key }}" aria-hidden="true"></span>{{ ch.label }}</span>
+          <span class="pill pill-{{ ch.verdict.state }}">{{ state_icon(ch.verdict.state) }}{{ state_words[ch.verdict.state] }}</span>
+        </header>
+        <p class="verdict-headline">{{ ch.verdict.headline }}</p>
+        <p class="verdict-detail">{{ ch.verdict.detail }}</p>
+        <p class="verdict-reco">{{ ch.verdict.recommendation }}</p>
+
+        <dl class="mini-stats">
+          <div>
+            <dt>Cost per account</dt>
+            <dd>{{ m(ch.metrics.cac, 'money') }}</dd>
+            <dd class="delta-cell">{{ delta(ch.deltas.cac, 'down') }}</dd>
+          </div>
+          <div>
+            <dt>Spend</dt>
+            <dd>{{ m(ch.metrics.spend, 'money') }}</dd>
+            <dd class="delta-cell">{{ delta(ch.deltas.spend, 'neutral') }}</dd>
+          </div>
+          <div>
+            <dt>New accounts</dt>
+            <dd>{{ m(ch.metrics.conversions, 'num') }}</dd>
+            <dd class="delta-cell">{{ delta(ch.deltas.conversions, 'up') }}</dd>
+          </div>
+          <div>
+            <dt>ROAS {{ tip('Revenue divided by ad spend, on first orders only. The break-even line of ' ~ v.benchmarks.breakeven_roas | round(1) ~ 'x comes from your plan at this monthly budget.') }}</dt>
+            <dd>{{ m(ch.metrics.roas, 'ratio1') }}</dd>
+            <dd class="delta-cell">{{ delta(ch.deltas.roas, 'up') }}</dd>
+          </div>
+        </dl>
+
+        {% if ch.frequency_flag %}
+        <p class="flag">
+          {{ state_icon('warning') }}
+          Frequency is {{ ch.metrics.frequency.value | round(1) }} — above {{ v.benchmarks.frequency_warn | round(1) }}.
+          The same locksmiths are seeing these ads repeatedly; expect performance to decay without new creative.
+        </p>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- 2 ───────────────────────────────────────── spend & pacing ───────────── -->
+<section class="section">
+  <h2>Spend pacing — {{ v.pacing.month_label }}</h2>
+  <div class="card pacing">
+    <div class="pacing-figures">
+      <div class="stat">
+        <span class="stat-label">Spent this month</span>
+        <span class="stat-value">{{ v.pacing.mtd_spend | money }}</span>
+        <span class="stat-note">through day {{ v.pacing.days_elapsed }} of {{ v.pacing.days_in_month }}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Monthly plan</span>
+        <span class="stat-value">{{ v.pacing.planned_monthly | money }}</span>
+        <span class="stat-note">month {{ v.pacing.program_month }} of the plan{% if v.pacing.start_assumed %} <span class="assumed" tabindex="0" role="button" data-tip="PROGRAM_START_MONTH is not set in .env, so month 1 is assumed to be the current month. Set it to pace against the real plan.">assumed</span>{% endif %}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Projected month end</span>
+        <span class="stat-value">{{ m(v.pacing.projected, 'money') }}</span>
+        <span class="stat-note">{{ delta(v.pacing.projected_vs_plan, 'neutral') }} vs plan</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Left to spend</span>
+        <span class="stat-value">{{ (v.pacing.planned_monthly - v.pacing.mtd_spend) | money }}</span>
+        <span class="stat-note">{{ m(v.pacing.daily_budget_remaining, 'money') }}/day over {{ v.pacing.days_remaining }} days</span>
+      </div>
+    </div>
+    <div class="meter" role="img"
+         aria-label="{{ v.pacing.mtd_spend | money }} spent of a {{ v.pacing.planned_monthly | money }} monthly plan">
+      <div class="meter-track">
+        <div class="meter-fill" style="width: {{ [ (v.pacing.pct_of_plan.value or 0) * 100, 100 ] | min | round(1) }}%"></div>
+        <div class="meter-marker" style="left: {{ (v.pacing.days_elapsed / v.pacing.days_in_month * 100) | round(1) }}%"></div>
+      </div>
+      <p class="meter-caption">
+        <span>{{ m(v.pacing.pct_of_plan, 'pct') }} of plan spent</span>
+        <span class="muted">the notch marks how far through the month you are</span>
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- 3 ───────────────────────────────────────────── trends ───────────────── -->
+<section class="section">
+  <div class="section-head">
+    <h2>Trends</h2>
+    <div class="toggle" role="group" aria-label="Which channels to plot">
+      <button type="button" class="toggle-btn is-selected" data-mode="compare">Compare</button>
+      <button type="button" class="toggle-btn" data-mode="blended">Blended</button>
+      {% for ch in v.channels %}
+      <button type="button" class="toggle-btn" data-mode="{{ ch.key }}">{{ ch.label }}</button>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% for chart in [
+      {'id': 'cac', 'title': 'Cost per new account', 'note': '7-day rolling. The line is spend divided by accounts over the trailing week, not an average of daily figures.'},
+      {'id': 'roas', 'title': 'Return on ad spend', 'note': '7-day rolling, first-order revenue only.'},
+      {'id': 'spend', 'title': 'Daily spend', 'note': 'Actual spend per day.'}
+  ] %}
+  <figure class="card chart-card" data-chart="{{ chart.id }}">
+    <figcaption>
+      <div>
+        <h3>{{ chart.title }}</h3>
+        <p class="chart-note">{{ chart.note }}</p>
+      </div>
+      <button type="button" class="table-toggle" aria-expanded="false">Table</button>
+    </figcaption>
+    <div class="chart-legend" hidden></div>
+    <div class="chart-plot"></div>
+    <div class="chart-table" hidden></div>
+  </figure>
+  {% endfor %}
+</section>
+
+<!-- 4 ──────────────────────────────────────── channel comparison ────────── -->
+<section class="section">
+  <h2>Channel comparison</h2>
+  <div class="card table-wrap">
+    <table class="grid">
+      <caption class="sr-only">Core metrics for each channel over {{ v.window.pretty }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">Metric</th>
+          {% for ch in v.channels %}
+          <th scope="col"><span class="swatch swatch-{{ ch.key }}" aria-hidden="true"></span>{{ ch.label }}</th>
+          {% endfor %}
+          <th scope="col">Both</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set rows = [
+          ('Spend', 'spend', 'money'),
+          ('New accounts', 'conversions', 'num'),
+          ('Cost per account', 'cac', 'money'),
+          ('Revenue (first order)', 'revenue', 'money'),
+          ('ROAS', 'roas', 'ratio'),
+          ('Profit-adjusted ROAS', 'profit_roas', 'ratio'),
+          ('Average order value', 'aov', 'money'),
+          ('Cost per landing page view', 'cost_per_lpv', 'money2'),
+          ('Click-through rate', 'ctr', 'pct2'),
+          ('Cost per click', 'cpc', 'money2'),
+          ('CPM', 'cpm', 'money2'),
+          ('Conversion rate', 'cvr', 'pct2'),
+          ('Frequency', 'frequency', 'num1'),
+          ('Thumbstop rate', 'thumbstop', 'pct'),
+          ('Cost per view', 'cpv', 'money2'),
+          ('View rate', 'view_rate', 'pct'),
+          ('Watched 25%', 'vtr_25', 'pct'),
+          ('Watched 50%', 'vtr_50', 'pct'),
+          ('Watched 75%', 'vtr_75', 'pct'),
+          ('Watched 100%', 'vtr_100', 'pct'),
+          ('LTV to CAC', 'ltv_to_cac', 'ratio1'),
+          ('Payback (months)', 'payback_months', 'num1')
+        ] %}
+        {% set explain = {
+          'profit_roas': 'Revenue at your ' ~ (v.benchmarks.gross_margin * 100) | round(0) | int ~ '% gross margin, divided by spend. This is return on what you keep, not on the top line.',
+          'frequency': 'Average times one person saw an ad in this period. Computed from a reach figure fetched for exactly this window — reach cannot be added up across days.',
+          'thumbstop': 'Share of impressions where someone stopped scrolling for at least 3 seconds. Meta only.',
+          'view_rate': 'Share of impressions that became a counted YouTube view. YouTube counts a view at 30 seconds or full play, so it is not comparable to a Meta 3-second view.',
+          'ltv_to_cac': 'Lifetime gross profit per account (' ~ v.benchmarks.account_ltv_gp | money ~ ') divided by what it cost to acquire one.',
+          'cvr': 'New accounts divided by link clicks where the channel reports them, otherwise all clicks.'
+        } %}
+        {% for label, key, kind in rows %}
+        <tr>
+          <th scope="row">{{ label }}{% if key in explain %} {{ tip(explain[key]) }}{% endif %}</th>
+          {% for ch in v.channels %}
+          <td class="num">{{ m(ch.metrics[key], kind) }}</td>
+          {% endfor %}
+          <td class="num">{{ m(v.blended.metrics[key], kind) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- 5 ──────────────────────────────────────────── campaigns ─────────────── -->
+<section class="section">
+  <h2>Campaigns</h2>
+  <div class="card table-wrap">
+    <table class="grid sortable" id="campaign-table">
+      <caption class="sr-only">Campaign performance over {{ v.window.pretty }}, sortable</caption>
+      <thead>
+        <tr>
+          <th scope="col" data-sort="text">Campaign</th>
+          <th scope="col" class="num" data-sort="number">Spend</th>
+          <th scope="col" class="num" data-sort="number">Accounts</th>
+          <th scope="col" class="num" data-sort="number" aria-sort="ascending">Cost per account</th>
+          <th scope="col" class="num" data-sort="number">ROAS</th>
+          <th scope="col" class="num" data-sort="number">CTR</th>
+          <th scope="col">Spend trend</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in v.campaigns %}
+        <tr>
+          <th scope="row">
+            <span class="swatch swatch-{{ c.channel }}" aria-hidden="true"></span>
+            <span class="campaign-name">{{ c.name }}</span>
+          </th>
+          <td class="num" data-value="{{ c.spend }}">{{ c.spend | money }}</td>
+          <td class="num" data-value="{{ c.conversions }}">{{ c.conversions | number }}</td>
+          <td class="num" data-value="{{ c.cac if c.cac is not none else 1e12 }}">
+            {% if c.cac is not none and c.cac <= v.benchmarks.cac %}<span class="under-benchmark">{{ m(c.metrics.cac, 'money') }}</span>
+            {% else %}{{ m(c.metrics.cac, 'money') }}{% endif %}
+          </td>
+          <td class="num" data-value="{{ c.roas if c.roas is not none else -1 }}">{{ m(c.metrics.roas, 'ratio1') }}</td>
+          <td class="num" data-value="{{ c.metrics.ctr.value if c.metrics.ctr.value is not none else -1 }}">{{ m(c.metrics.ctr, 'pct2') }}</td>
+          <td class="spark" data-spark="{{ c.sparkline | join(',') }}" data-channel="{{ c.channel }}"></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="foot-note">Cost per account is shown in green where it beats the {{ v.benchmarks.cac | money }} benchmark.</p>
+</section>
+
+<!-- 6 ─────────────────────────────────────── creative leaderboard ───────── -->
+<section class="section">
+  <div class="section-head">
+    <h2>Creative leaderboard</h2>
+    <p class="foot-note">
+      Ads under {{ v.creatives.spend_floor | money }} spend are excluded so a handful of lucky clicks cannot top the table
+      ({{ v.creatives.excluded_count }} of {{ v.creatives.total_count }} ads excluded).
+    </p>
+  </div>
+
+  <div class="leaderboards">
+    {% for group, heading, blurb in [('best', 'Working', 'Lowest cost per account.'), ('worst', 'Not working', 'Highest cost per account, or spending with nothing to show.')] %}
+    <div class="card">
+      <h3>{{ heading }}</h3>
+      <p class="chart-note">{{ blurb }}</p>
+      {% if v.creatives[group] %}
+      <ol class="creative-list">
+        {% for ad in v.creatives[group] %}
+        <li class="creative">
+          <div class="thumb {{ 'thumb-empty' if not ad.thumbnail_url }}">
+            {% if ad.thumbnail_url %}<img src="{{ ad.thumbnail_url }}" alt="">
+            {% else %}<span class="thumb-note" title="The ad platform did not return a thumbnail for this ad.">no preview</span>{% endif %}
+          </div>
+          <div class="creative-body">
+            <p class="creative-name"><span class="swatch swatch-{{ ad.channel }}" aria-hidden="true"></span>{{ ad.name }}</p>
+            <p class="creative-campaign">{{ ad.campaign_name }}</p>
+            <dl class="creative-stats">
+              <div><dt>Cost/account</dt><dd>{{ m(ad.metrics.cac, 'money') }}</dd></div>
+              <div><dt>Spend</dt><dd>{{ ad.spend | money }}</dd></div>
+              <div><dt>Accounts</dt><dd>{{ ad.conversions | number }}</dd></div>
+              <div><dt>ROAS</dt><dd>{{ m(ad.metrics.roas, 'ratio1') }}</dd></div>
+            </dl>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+      {% else %}
+      <p class="empty">Not enough ads above the {{ v.creatives.spend_floor | money }} spend floor to rank yet.</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- 7 ───────────────────────────────────────── data health ──────────────── -->
+<footer class="section health">
+  <h2>Data health</h2>
+  <div class="card">
+    <dl class="health-grid">
+      {% for s in v.health.syncs %}
+      <div class="health-item {{ 'is-error' if s.status == 'error' }}">
+        <dt>{{ s.label }} last sync</dt>
+        <dd>
+          {{ s.finished_at | pretty_date }}
+          <span class="tag tag-{{ s.status }}">{{ s.status }}</span>
+          {% if s.error %}<span class="error-text">{{ s.error }}</span>{% endif %}
+        </dd>
+      </div>
+      {% else %}
+      <div class="health-item"><dt>Sync</dt><dd>No sync has run yet.</dd></div>
+      {% endfor %}
+
+      <div class="health-item">
+        <dt>Attribution window</dt>
+        <dd>{{ v.health.attribution_windows | join(' · ') if v.health.attribution_windows else '—' }}</dd>
+      </div>
+      <div class="health-item">
+        <dt>Conversion counted as an account</dt>
+        <dd>
+          {{ v.health.conversion_actions | join(' · ') if v.health.conversion_actions else '—' }}
+          {% if v.health.conversion_proxied %}
+          <span class="tag tag-proxy" tabindex="0" role="button"
+                data-tip="Cost per account is currently derived from purchase conversions, not from verified new wholesale accounts. Connect the Shopify first-order feed to make it exact.">proxied from purchases</span>
+          {% endif %}
+        </dd>
+      </div>
+      <div class="health-item">
+        <dt>Reporting through</dt>
+        <dd>{{ v.window.end }} <span class="muted">— the last complete day, so figures do not move during the day</span></dd>
+      </div>
+      <div class="health-item">
+        <dt>Page generated</dt>
+        <dd>{{ v.generated_at }}</dd>
+      </div>
+    </dl>
+  </div>
+  <p class="foot-note">
+    Every figure traces to a stored raw API response and a formula in METRICS.md. A dash means the number is genuinely
+    unavailable — hover or tap it for the reason. Nothing here is estimated.
+  </p>
+</footer>
+
+</main>
+
+<script type="application/json" id="view-data">{{ view_json | safe }}</script>
+<script src="{{ asset('dashboard.js') }}"></script>
+</body>
+</html>
