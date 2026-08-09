@@ -14,15 +14,18 @@
   var VIEW = JSON.parse(document.getElementById("view-data").textContent);
   var NS = "http://www.w3.org/2000/svg";
 
+  // Kept in step with the CSS custom properties in dashboard.css. The two
+  // channel hues are a validated categorical pair (CVD ΔE 15.7 on this
+  // surface); data marks use them flat, never gradient-filled.
   var COLORS = {
-    meta: "#2a78d6",
-    youtube: "#eb6834",
-    blended: "#52514e"
+    meta: "#6d55c8",
+    youtube: "#d95980",
+    blended: "#6e6575"
   };
-  var SURFACE = "#fcfcfb";
-  var GRID = "#e1e0d9";
-  var AXIS = "#c3c2b7";
-  var INK2 = "#52514e";
+  var SURFACE = "#fffdfb";
+  var GRID = "#f0e9e6";
+  var AXIS = "#e2d8d4";
+  var INK2 = "#6e6575";
 
   var BLOCKS = {};
   VIEW.channels.forEach(function (channel) { BLOCKS[channel.key] = channel; });
