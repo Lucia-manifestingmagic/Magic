@@ -36,5 +36,9 @@ backfill: install
 demo: install
 	$(PY) -m app.export
 
+## Export and publish the demo to GitHub Pages (needs `gh auth login` once)
+publish: install
+	./scripts/publish_demo.sh
+
 clean:
 	rm -rf .venv data docs __pycache__ app/__pycache__ .pytest_cache

@@ -34,11 +34,19 @@ def _demo(real, demo):
     return demo if DEMO_MODE else real
 
 
-CLIENT_NAME: str = os.environ.get(
-    "CLIENT_NAME", _demo("Noble Key Supply", "Acme Wholesale Supply")
-)
-CLIENT_SHORT: str = os.environ.get("CLIENT_SHORT", _demo("NKS", "ACME"))
-CLIENT_TAGLINE: str = os.environ.get(
+def _s(name: str, default: str) -> str:
+    """An env var set to an empty string means 'unset', not 'blank'.
+
+    `CLIENT_NAME= python -m app.export` must still resolve to the default —
+    os.environ.get would return "" here, which would silently blank the
+    client name on the page.
+    """
+    return os.environ.get(name, "").strip() or default
+
+
+CLIENT_NAME: str = _s("CLIENT_NAME", _demo("Noble Key Supply", "Acme Wholesale Supply"))
+CLIENT_SHORT: str = _s("CLIENT_SHORT", _demo("NKS", "ACME"))
+CLIENT_TAGLINE: str = _s(
     "CLIENT_TAGLINE", _demo("", "Sample data — this is a portfolio demo, not a real account.")
 )
 
