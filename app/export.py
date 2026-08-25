@@ -29,7 +29,13 @@ import sys
 # Demo mode has to be set before app.constants is imported, since the constants
 # read their defaults at import time.
 os.environ.setdefault("DEMO_MODE", "1")
-os.environ.setdefault("DB_PATH", "data/demo.db")
+
+# Separate databases per mode, and not optional. Fixture *content* depends on
+# DEMO_MODE at seed time — campaign names carry CLIENT_SHORT — so a shared file
+# would let a client-branded seed leak into the sanitised render. The publish
+# gate caught exactly that once; this is the fix rather than the detection.
+_sanitised = os.environ.get("DEMO_MODE", "1").strip() in {"1", "true", "yes"}
+os.environ.setdefault("DB_PATH", "data/demo.db" if _sanitised else "data/client.db")
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape  # noqa: E402
 
