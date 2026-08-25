@@ -15,17 +15,17 @@
   var NS = "http://www.w3.org/2000/svg";
 
   // Kept in step with the CSS custom properties in dashboard.css. The two
-  // channel hues are a validated categorical pair (CVD ΔE 15.7 on this
+  // channel hues are a validated categorical pair (worst CVD ΔE 19.3 on this
   // surface); data marks use them flat, never gradient-filled.
   var COLORS = {
-    meta: "#6d55c8",
-    youtube: "#d95980",
-    blended: "#6e6575"
+    meta: "#3a66b5",
+    youtube: "#e23737",
+    blended: "#4c5666"
   };
-  var SURFACE = "#fffdfb";
-  var GRID = "#f0e9e6";
-  var AXIS = "#e2d8d4";
-  var INK2 = "#6e6575";
+  var SURFACE = "#fdfdfe";
+  var GRID = "#e6eaf0";
+  var AXIS = "#cbd3de";
+  var INK2 = "#4c5666";
 
   var BLOCKS = {};
   VIEW.channels.forEach(function (channel) { BLOCKS[channel.key] = channel; });
@@ -52,6 +52,12 @@
       reference: { value: VIEW.benchmarks.breakeven_roas, label: VIEW.benchmarks.breakeven_roas.toFixed(1) + "x break-even" },
       type: "line"
     },
+    bio: {
+      label: "Link taps and visits",
+      format: fmtInt,
+      reference: null,
+      type: "line"
+    },
     spend: {
       label: "Daily spend",
       pick: function (point) { return { value: point.spend, reason: null }; },
@@ -60,6 +66,11 @@
       type: "column"
     }
   };
+
+  // Link-in-bio is a funnel, not two competing entities, so its two lines are
+  // one hue at two shades rather than two categorical colours. The lighter step
+  // clears the 2:1 ordinal floor against the surface.
+  var BIO_COLORS = { clicks: "#86a9dd", sessions: "#3a66b5" };
 
   var mode = "compare";
 
@@ -111,6 +122,19 @@
 
   function seriesFor(chartKey) {
     var config = CHARTS[chartKey];
+
+    // The bio funnel is not per-channel, so the compare/blended toggle above
+    // the paid charts does not apply to it.
+    if (chartKey === "bio") {
+      var pts = (VIEW.bio && VIEW.bio.series) || [];
+      return [
+        { key: "clicks", label: "Link taps", color: BIO_COLORS.clicks,
+          points: pts.map(function (p) { return { date: p.date, value: p.clicks, reason: null }; }) },
+        { key: "sessions", label: "Visits that landed", color: BIO_COLORS.sessions,
+          points: pts.map(function (p) { return { date: p.date, value: p.sessions, reason: null }; }) }
+      ];
+    }
+
     return MODES[mode].map(function (key) {
       var block = BLOCKS[key];
       return {
@@ -193,7 +217,8 @@
     ticks.forEach(function (tick) {
       el("line", { x1: pad.left, x2: pad.left + innerWidth, y1: y(tick), y2: y(tick), stroke: GRID, "stroke-width": 1 }, svg);
       var label = el("text", { x: pad.left - 8, y: y(tick) + 3.5, "text-anchor": "end", class: "tick" }, svg);
-      label.textContent = chartKey === "roas" ? tick.toFixed(1) + "x" : money(tick);
+      label.textContent = chartKey === "roas" ? tick.toFixed(1) + "x"
+                        : (chartKey === "bio" ? fmtInt(tick) : money(tick));
     });
     el("line", { x1: pad.left, x2: pad.left + innerWidth, y1: y(0), y2: y(0), stroke: AXIS, "stroke-width": 1 }, svg);
 

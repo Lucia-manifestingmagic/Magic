@@ -339,6 +339,105 @@ def delta(current: Optional[float], previous: Optional[float]) -> Metric:
 
 
 # ---------------------------------------------------------------------------
+# Link-in-bio traffic
+# ---------------------------------------------------------------------------
+# Kept apart from the paid tables on purpose. This traffic carries no spend, so
+# folding it in would drag blended CAC toward zero and flatter the paid
+# channels with conversions they did not buy.
+
+
+@dataclasses.dataclass
+class BioTotals:
+    link_clicks: float = 0.0
+    sessions: float = 0.0
+    new_sessions: float = 0.0
+    orders: float = 0.0
+    revenue: float = 0.0
+    present: Set[str] = dataclasses.field(default_factory=set)
+    row_count: int = 0
+
+
+BIO_FIELDS = ("link_clicks", "sessions", "new_sessions", "orders", "revenue")
+
+
+def sum_bio(rows: Iterable[Any]) -> BioTotals:
+    totals = BioTotals()
+    for row in rows:
+        totals.row_count += 1
+        for field in BIO_FIELDS:
+            try:
+                raw = row[field]
+            except (KeyError, IndexError):
+                continue
+            if raw is None:
+                continue
+            totals.present.add(field)
+            setattr(totals, field, getattr(totals, field) + float(raw))
+    return totals
+
+
+def derive_bio(totals: BioTotals) -> Dict[str, Metric]:
+    """Clicks, visits, and the gap between them.
+
+    The gap is the point of this section. A tap on the bio link and a page that
+    actually loads are different events, measured by different tools, and the
+    difference is real traffic lost to slow loads, redirect chains and in-app
+    browsers. Reporting only one of the two hides it.
+    """
+    clicks = getattr(totals, "link_clicks") if "link_clicks" in totals.present else None
+    sessions = getattr(totals, "sessions") if "sessions" in totals.present else None
+    orders = getattr(totals, "orders") if "orders" in totals.present else None
+    revenue = getattr(totals, "revenue") if "revenue" in totals.present else None
+    new_sessions = getattr(totals, "new_sessions") if "new_sessions" in totals.present else None
+
+    out: Dict[str, Metric] = {}
+    out["link_clicks"] = Metric(clicks, None if clicks is not None else "No click data from the link tool.")
+    out["sessions"] = Metric(sessions, None if sessions is not None else "No session data from analytics.")
+    out["orders"] = Metric(orders, None if orders is not None else "No orders attributed to this source.")
+    out["revenue"] = Metric(revenue, None if revenue is not None else "No revenue attributed to this source.")
+
+    out["click_to_visit"] = _div(
+        sessions,
+        clicks,
+        zero_reason="No link clicks recorded in this period.",
+        missing_reason="Needs both link clicks and sessions. Connect the link tool and analytics.",
+    )
+    out["lost_clicks"] = Metric(
+        None if (clicks is None or sessions is None) else max(clicks - sessions, 0.0),
+        None if (clicks is not None and sessions is not None)
+        else "Needs both link clicks and sessions to compare.",
+    )
+    out["visit_to_order"] = _div(
+        orders, sessions, zero_reason="No sessions recorded.", missing_reason="No orders attributed to this source."
+    )
+    out["revenue_per_visit"] = _div(
+        revenue, sessions, zero_reason="No sessions recorded.", missing_reason="No revenue attributed to this source."
+    )
+    out["new_visitor_share"] = _div(
+        new_sessions, sessions, zero_reason="No sessions recorded.",
+        missing_reason="Analytics is not reporting new versus returning.",
+    )
+    return out
+
+
+def bio_series(rows: Iterable[Any]) -> List[Tuple[dt.date, BioTotals]]:
+    buckets: Dict[dt.date, List[Any]] = {}
+    for row in rows:
+        raw_date = row["date"]
+        day = raw_date if isinstance(raw_date, dt.date) else dt.date.fromisoformat(str(raw_date))
+        buckets.setdefault(day, []).append(row)
+    if not buckets:
+        return []
+    ordered = sorted(buckets)
+    out: List[Tuple[dt.date, BioTotals]] = []
+    day = ordered[0]
+    while day <= ordered[-1]:
+        out.append((day, sum_bio(buckets.get(day, []))))
+        day += dt.timedelta(days=1)
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Pacing
 # ---------------------------------------------------------------------------
 

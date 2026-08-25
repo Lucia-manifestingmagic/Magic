@@ -166,6 +166,48 @@ def _ramp(day_index: int, start_day: int, total_days: int) -> float:
     return min(1.0, 0.35 + 0.65 * live_days / 14.0)
 
 
+def _bio_link_rows(rng: random.Random, first_day: dt.date, days: int) -> List[Dict[str, Any]]:
+    """Daily link-in-bio traffic.
+
+    Two separate numbers on purpose: taps on the bio link (from the link tool)
+    and sessions that actually reached the page (from analytics). The gap
+    between them is traffic lost to the in-app browser, redirect hops and load
+    time, and it only shows up if both are measured.
+    """
+    rows: List[Dict[str, Any]] = []
+    for index in range(days):
+        day = first_day + dt.timedelta(days=index)
+        progress = index / float(max(days - 1, 1))
+        weekday = day.weekday()
+
+        # Trade audience: weekdays far busier than weekends.
+        weekday_factor = 0.55 if weekday >= 5 else 1.0
+        base = (58 + 165 * progress) * weekday_factor
+        clicks = max(0, int(_clamped_gauss(rng, base, base * 0.22, 4)))
+
+        # Only some of those taps become a page that actually loads.
+        arrival = _clamped_gauss(rng, 0.77, 0.05, 0.45)
+        sessions = int(clicks * min(arrival, 0.98))
+        new_sessions = int(sessions * _clamped_gauss(rng, 0.71, 0.06, 0.3))
+
+        orders = _poisson(rng, sessions * 0.011)
+        revenue = sum(
+            round(_clamped_gauss(rng, 310.0, 120.0, 45.0), 2) for _ in range(orders)
+        )
+
+        rows.append({
+            "date": day.isoformat(),
+            "source": "instagram",
+            "link_clicks": clicks,
+            "sessions": sessions,
+            "new_sessions": new_sessions,
+            "orders": float(orders),
+            "revenue": round(revenue, 2),
+            "provider": "link tool + analytics (fixture)",
+        })
+    return rows
+
+
 def build_rows(today: Optional[dt.date] = None) -> Dict[str, List[Dict[str, Any]]]:
     """Generate every fixture row. Deterministic for a given `today`."""
     today = today or dt.date.today()
@@ -338,7 +380,9 @@ def build_rows(today: Optional[dt.date] = None) -> Dict[str, List[Dict[str, Any]
                 }
             )
 
-    return {"daily": daily, "creatives": creatives, "reach": reach_rows}
+    bio_rows = _bio_link_rows(rng, first_day, DAYS)
+
+    return {"daily": daily, "creatives": creatives, "reach": reach_rows, "bio": bio_rows}
 
 
 def load(conn=None, today: Optional[dt.date] = None) -> Dict[str, int]:
@@ -352,6 +396,7 @@ def load(conn=None, today: Optional[dt.date] = None) -> Dict[str, int]:
         "daily": db.upsert_daily(conn, data["daily"]),
         "creatives": db.upsert_creatives(conn, data["creatives"]),
         "reach": db.upsert_reach(conn, data["reach"]),
+        "bio": db.upsert_bio_link(conn, data["bio"]),
     }
 
     today = today or dt.date.today()
@@ -369,5 +414,6 @@ def load(conn=None, today: Optional[dt.date] = None) -> Dict[str, int]:
 if __name__ == "__main__":
     result = load()
     print(
-        "Seeded {daily} daily rows, {creatives} creatives, {reach} reach windows.".format(**result)
+        "Seeded {daily} daily rows, {creatives} creatives, {reach} reach windows, "
+        "{bio} days of link-in-bio traffic.".format(**result)
     )

@@ -300,3 +300,71 @@ def test_reach_is_only_returned_for_an_exact_window():
     }])
     assert db.fetch_reach(conn, "meta", dt.date(2026, 7, 12), dt.date(2026, 8, 8)) == 40000
     assert db.fetch_reach(conn, "meta", dt.date(2026, 7, 13), dt.date(2026, 8, 8)) is None
+
+
+# --- link in bio -----------------------------------------------------------
+
+
+def bio_row(**overrides):
+    base_row = {
+        "date": "2026-08-01",
+        "source": "instagram",
+        "link_clicks": 0,
+        "sessions": 0,
+        "new_sessions": 0,
+        "orders": 0.0,
+        "revenue": 0.0,
+    }
+    base_row.update(overrides)
+    return base_row
+
+
+def test_click_to_visit_is_sessions_over_clicks():
+    totals = metrics.sum_bio([bio_row(link_clicks=1000, sessions=770)])
+    derived = metrics.derive_bio(totals)
+    assert derived["click_to_visit"].value == pytest.approx(0.77)
+    assert derived["lost_clicks"].value == pytest.approx(230)
+
+
+def test_bio_rate_is_weighted_across_days_not_averaged():
+    """Same rule as CAC: sum both sides, then divide once."""
+    rows = [bio_row(link_clicks=100, sessions=90), bio_row(date="2026-08-02", link_clicks=900, sessions=450)]
+    period = metrics.derive_bio(metrics.sum_bio(rows))["click_to_visit"].value
+    naive = (0.90 + 0.50) / 2
+    assert period == pytest.approx(540 / 1000.0)
+    assert period != pytest.approx(naive)
+
+
+def test_bio_needs_both_sides_to_compare():
+    """Clicks without sessions cannot produce a rate or a loss figure."""
+    totals = metrics.sum_bio([{"date": "2026-08-01", "link_clicks": 500}])
+    derived = metrics.derive_bio(totals)
+    assert derived["click_to_visit"].value is None
+    assert "sessions" in derived["click_to_visit"].reason
+    assert derived["lost_clicks"].value is None
+
+
+def test_bio_lost_clicks_never_goes_negative():
+    """Analytics can out-count the link tool; that is not negative loss."""
+    derived = metrics.derive_bio(metrics.sum_bio([bio_row(link_clicks=100, sessions=140)]))
+    assert derived["lost_clicks"].value == 0.0
+
+
+def test_bio_traffic_is_not_in_the_paid_tables():
+    """Bio traffic carries no spend, so it must never reach blended CAC."""
+    conn = db.connect(":memory:")
+    db.init(conn)
+    db.upsert_bio_link(conn, [bio_row(link_clicks=900, sessions=700, orders=6.0)])
+    paid = db.fetch_rows(conn, dt.date(2026, 8, 1), dt.date(2026, 8, 1))
+    assert paid == []
+    assert metrics.sum_rows(paid).conversions == 0.0
+
+
+def test_bio_upserts_are_idempotent():
+    conn = db.connect(":memory:")
+    db.init(conn)
+    db.upsert_bio_link(conn, [bio_row(link_clicks=100)])
+    db.upsert_bio_link(conn, [bio_row(link_clicks=250)])
+    rows = db.fetch_bio_link(conn, dt.date(2026, 8, 1), dt.date(2026, 8, 1))
+    assert len(rows) == 1
+    assert rows[0]["link_clicks"] == 250

@@ -189,6 +189,41 @@ def _creative_leaderboard(
     }
 
 
+def _bio_block(conn: sqlite3.Connection, window: ranges.Window, prior: ranges.Window) -> Dict[str, Any]:
+    """Link-in-bio traffic: taps on the link, and visits that actually landed."""
+    rows = db.fetch_bio_link(conn, window.start, window.end)
+    prior_rows = db.fetch_bio_link(conn, prior.start, prior.end)
+
+    totals = metrics.sum_bio(rows)
+    derived = metrics.derive_bio(totals)
+    prior_derived = metrics.derive_bio(metrics.sum_bio(prior_rows))
+
+    series = []
+    for day, day_totals in metrics.bio_series(rows):
+        series.append({
+            "date": day.isoformat(),
+            "clicks": day_totals.link_clicks,
+            "sessions": day_totals.sessions,
+        })
+
+    rate = derived["click_to_visit"].value
+    providers = sorted({r["provider"] for r in rows if r["provider"]})
+
+    return {
+        "has_data": totals.row_count > 0,
+        "source": C.BIO_LINK_SOURCE,
+        "metrics": _metrics_json(derived),
+        "deltas": {
+            name: _metric_json(metrics.delta(derived[name].value, prior_derived[name].value))
+            for name in ("link_clicks", "sessions", "orders")
+        },
+        "series": series,
+        "warn": rate is not None and rate < C.BIO_CLICK_TO_VISIT_WARN,
+        "warn_threshold": C.BIO_CLICK_TO_VISIT_WARN,
+        "providers": providers,
+    }
+
+
 def _health(conn: sqlite3.Connection, rows: Sequence[sqlite3.Row]) -> Dict[str, Any]:
     syncs = []
     for row in db.latest_sync(conn):
@@ -287,6 +322,7 @@ def build(
             "breakeven_roas": breakeven,
             "gross_margin": C.GROSS_MARGIN,
             "frequency_warn": C.FREQUENCY_WARN,
+            "bio_click_to_visit_warn": C.BIO_CLICK_TO_VISIT_WARN,
             "account_ltv_gp": C.ACCOUNT_LTV_GP,
             "account_monthly_gp": C.ACCOUNT_MONTHLY_GP,
         },
@@ -294,6 +330,7 @@ def build(
             _group(rows, ("channel", "campaign_id"), "campaign_name"),
             key=lambda item: -item["spend"],
         ),
+        "bio": _bio_block(conn, window, prior),
         "creatives": _creative_leaderboard(rows, creatives),
         "health": _health(conn, rows),
     }

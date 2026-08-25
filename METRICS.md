@@ -126,6 +126,40 @@ Quartile counts are stored as counts and divided by impressions here. Google's
 API returns quartile *rates* directly; the connector multiplies them back into
 counts before storing, so they stay additive across days.
 
+## Link in bio
+
+Traffic from the link in the Instagram bio, stored in its own `bio_link_daily`
+table and **never** mixed into the paid tables.
+
+That separation is deliberate. This traffic carries no ad spend, so folding it
+into `daily_metrics` would add conversions to the denominator of blended CAC
+with no dollars on top, dragging the headline number toward zero and flattering
+Meta and YouTube with results they did not buy. A test asserts it stays out.
+
+| Metric | Formula | Notes |
+|---|---|---|
+| Link taps | `Σ link_clicks` | Clicks on the bio link, from the link tool |
+| Visits that landed | `Σ sessions` | Sessions analytics actually recorded |
+| **Taps that reach the page** | `Σ sessions ÷ Σ link_clicks` | Summed both sides, then divided once — same rule as CAC |
+| Taps lost | `Σ link_clicks − Σ sessions`, floored at 0 | Floored because analytics can out-count the link tool |
+| New visitor share | `Σ new_sessions ÷ Σ sessions` | |
+| Visit to order rate | `Σ orders ÷ Σ sessions` | |
+| Revenue per visit | `Σ revenue ÷ Σ sessions` | |
+
+**A tap and a visit are different events measured by different tools**, and the
+gap between them is real traffic lost to slow loads, redirect chains and the
+in-app browser closing before the page registers. Reporting only one of the two
+hides it. Below `BIO_CLICK_TO_VISIT_WARN` (80%) the section raises a flag.
+
+Both sides must be present for a rate: clicks with no session data resolves to
+`—` with a reason, never to a rate computed off one number.
+
+**Where the real numbers come from.** The click side needs the bio link tool
+(Bitly, Linktree, Beacons — anything with an analytics API). The session side
+needs GA4 or Shopify, filtered to the campaign tag on the bio URL. Tag the link
+`?utm_source=instagram&utm_medium=bio` so sessions can be isolated; without a
+tag, the session side cannot be separated from other traffic.
+
 ## Frequency — and why it is often a dash
 
 `frequency = Σ impressions ÷ reach`

@@ -6,7 +6,7 @@
 <title>{{ v.client.name }} — paid media</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@600;700;800&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ asset('dashboard.css') }}">
 </head>
 <body>
@@ -78,6 +78,7 @@
 <header class="topbar">
   <div class="topbar-id">
     <h1>{{ v.client.name }}</h1>
+    <p class="sub">{{ v.client.tagline }}{% if v.client.city %} · {{ v.client.city }}{% endif %}</p>
     <p class="sub">Paid media · Meta and YouTube · {{ v.window.pretty }}</p>
   </div>
   <nav class="ranges" aria-label="Date range">
@@ -299,6 +300,84 @@
     </table>
   </div>
 </section>
+
+<!-- 4b ────────────────────────────────────────── link in bio ─────────────── -->
+{% if v.bio.has_data %}
+<section class="section">
+  <div class="section-head">
+    <h2>Link in bio</h2>
+    <p class="foot-note">
+      Traffic from the {{ v.bio.source }} bio link. Tracked separately from paid: it carries no spend,
+      so folding it into the numbers above would drag blended cost per account toward zero.
+    </p>
+  </div>
+
+  <div class="bio-row">
+    <div class="card bio-funnel">
+      <dl class="bio-steps">
+        <div class="bio-step">
+          <dt>Link taps {{ tip('Clicks on the link in the ' ~ v.bio.source ~ ' bio, counted by the link tool.') }}</dt>
+          <dd>{{ m(v.bio.metrics.link_clicks, 'num') }}</dd>
+          <dd class="delta-cell">{{ delta(v.bio.deltas.link_clicks, 'up') }}</dd>
+        </div>
+        <div class="bio-arrow" aria-hidden="true">
+          <span class="bio-drop">&minus;{{ m(v.bio.metrics.lost_clicks, 'num') }}</span>
+        </div>
+        <div class="bio-step">
+          <dt>Visits that landed {{ tip('Sessions your analytics actually recorded on the landing page. Always lower than taps.') }}</dt>
+          <dd>{{ m(v.bio.metrics.sessions, 'num') }}</dd>
+          <dd class="delta-cell">{{ delta(v.bio.deltas.sessions, 'up') }}</dd>
+        </div>
+        <div class="bio-arrow" aria-hidden="true"></div>
+        <div class="bio-step">
+          <dt>Orders</dt>
+          <dd>{{ m(v.bio.metrics.orders, 'num') }}</dd>
+          <dd class="delta-cell">{{ delta(v.bio.deltas.orders, 'up') }}</dd>
+        </div>
+      </dl>
+
+      <div class="bio-rate {{ 'is-warn' if v.bio.warn }}">
+        <span class="bio-rate-value">{{ m(v.bio.metrics.click_to_visit, 'pct') }}</span>
+        <span class="bio-rate-label">of taps reach the page</span>
+      </div>
+
+      {% if v.bio.warn %}
+      <p class="flag">
+        {{ state_icon('warning') }}
+        {{ m(v.bio.metrics.lost_clicks, 'num') }} taps did not become a visit, below the
+        {{ v.benchmarks.bio_click_to_visit_warn | percent(0) }} mark. The usual causes are a slow
+        landing page, a redirect chain, or the in-app browser dropping the visit before it registers.
+      </p>
+      {% endif %}
+    </div>
+
+    <figure class="card chart-card" data-chart="bio">
+      <figcaption>
+        <div>
+          <h3>Taps and visits per day</h3>
+          <p class="chart-note">Both are counts on the same scale, so the gap between the lines is the traffic being lost.</p>
+        </div>
+        <button type="button" class="table-toggle" aria-expanded="false">Table</button>
+      </figcaption>
+      <div class="chart-legend" hidden></div>
+      <div class="chart-plot"></div>
+      <div class="chart-table" hidden></div>
+    </figure>
+  </div>
+
+  <div class="card table-wrap" style="margin-top: var(--gap)">
+    <table class="grid">
+      <caption class="sr-only">Link in bio detail</caption>
+      <tbody>
+        <tr><th scope="row">New visitors {{ tip('Share of sessions from someone analytics has not seen before.') }}</th><td class="num">{{ m(v.bio.metrics.new_visitor_share, 'pct') }}</td></tr>
+        <tr><th scope="row">Visit to order rate</th><td class="num">{{ m(v.bio.metrics.visit_to_order, 'pct2') }}</td></tr>
+        <tr><th scope="row">Revenue per visit</th><td class="num">{{ m(v.bio.metrics.revenue_per_visit, 'money2') }}</td></tr>
+        <tr><th scope="row">Revenue attributed</th><td class="num">{{ m(v.bio.metrics.revenue, 'money') }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
 
 <!-- 5 ──────────────────────────────────────────── campaigns ─────────────── -->
 <section class="section">

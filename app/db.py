@@ -12,6 +12,10 @@ Shape of the thing:
                     payload, which is what makes adding a third channel a new
                     connector file rather than a rewrite.
 
+    bio_link_daily  link-in-bio traffic. Deliberately NOT a row in daily_metrics:
+                    it has no spend, so folding it into the paid tables would
+                    silently drag blended CAC toward zero.
+
     reach_periods   reach is NOT additive across days, so it lives in its own
                     table keyed by the exact window it was fetched for.
     creatives       ad names, thumbnails, permalinks
@@ -92,6 +96,19 @@ CREATE TABLE IF NOT EXISTS reach_periods (
     reach       INTEGER,
     synced_at   TEXT NOT NULL,
     PRIMARY KEY (channel, level, entity_id, date_start, date_end)
+);
+
+CREATE TABLE IF NOT EXISTS bio_link_daily (
+    date         TEXT NOT NULL,
+    source       TEXT NOT NULL DEFAULT 'instagram',
+    link_clicks  INTEGER,
+    sessions     INTEGER,
+    new_sessions INTEGER,
+    orders       REAL,
+    revenue      REAL,
+    provider     TEXT,
+    synced_at    TEXT NOT NULL,
+    PRIMARY KEY (date, source)
 );
 
 CREATE TABLE IF NOT EXISTS creatives (
@@ -259,6 +276,50 @@ def upsert_reach(conn: sqlite3.Connection, rows: Iterable[Dict[str, Any]]) -> in
     )
     conn.commit()
     return len(payload)
+
+
+def upsert_bio_link(conn: sqlite3.Connection, rows: Iterable[Dict[str, Any]]) -> int:
+    """Insert-or-replace daily link-in-bio traffic. Idempotent by (date, source)."""
+    now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    payload = [
+        (
+            r["date"],
+            r.get("source", "instagram"),
+            r.get("link_clicks"),
+            r.get("sessions"),
+            r.get("new_sessions"),
+            r.get("orders"),
+            r.get("revenue"),
+            r.get("provider"),
+            now,
+        )
+        for r in rows
+    ]
+    if not payload:
+        return 0
+    conn.executemany(
+        "INSERT INTO bio_link_daily (date, source, link_clicks, sessions, new_sessions,"
+        " orders, revenue, provider, synced_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        " ON CONFLICT (date, source) DO UPDATE SET"
+        " link_clicks=excluded.link_clicks, sessions=excluded.sessions,"
+        " new_sessions=excluded.new_sessions, orders=excluded.orders,"
+        " revenue=excluded.revenue, provider=excluded.provider,"
+        " synced_at=excluded.synced_at",
+        payload,
+    )
+    conn.commit()
+    return len(payload)
+
+
+def fetch_bio_link(
+    conn: sqlite3.Connection, start: dt.date, end: dt.date
+) -> List[sqlite3.Row]:
+    return list(
+        conn.execute(
+            "SELECT * FROM bio_link_daily WHERE date BETWEEN ? AND ? ORDER BY date",
+            (start.isoformat(), end.isoformat()),
+        )
+    )
 
 
 def upsert_creatives(conn: sqlite3.Connection, rows: Iterable[Dict[str, Any]]) -> int:

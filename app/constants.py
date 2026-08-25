@@ -47,8 +47,12 @@ def _s(name: str, default: str) -> str:
 CLIENT_NAME: str = _s("CLIENT_NAME", _demo("Noble Key Supply", "Acme Wholesale Supply"))
 CLIENT_SHORT: str = _s("CLIENT_SHORT", _demo("NKS", "ACME"))
 CLIENT_TAGLINE: str = _s(
-    "CLIENT_TAGLINE", _demo("", "Sample data — this is a portfolio demo, not a real account.")
+    "CLIENT_TAGLINE",
+    _demo("Wide selection of car keys at wholesale prices",
+          "Sample data — this is a portfolio demo, not a real account."),
 )
+CLIENT_CITY: str = _s("CLIENT_CITY", _demo("San Diego, CA", "Anywhere, USA"))
+CLIENT_URL: str = _s("CLIENT_URL", _demo("noblekeysupply.com", "example.com"))
 
 
 # --- The pass/fail line ----------------------------------------------------
@@ -168,6 +172,18 @@ CHANNELS = {
 # Ads below this spend in the selected period are excluded from the creative
 # leaderboard, so a $12 ad with one lucky conversion cannot top the table.
 CREATIVE_SPEND_FLOOR: float = _f("CREATIVE_SPEND_FLOOR", 100.0)
+
+# --- Link in bio ------------------------------------------------------------
+# Traffic from the link in the Instagram bio. Tracked separately from paid:
+# a tap on the link and a page that actually loads are different events,
+# measured by different tools, and the gap between them is real lost traffic.
+BIO_LINK_SOURCE: str = _s("BIO_LINK_SOURCE", "instagram")
+
+# Below this share of clicks arriving as sessions, the dashboard raises a flag.
+# The usual causes are a slow landing page, a redirect chain, or the in-app
+# browser dropping the visit before it registers.
+BIO_CLICK_TO_VISIT_WARN: float = _f("BIO_CLICK_TO_VISIT_WARN", 0.80)
+
 
 # Meta's small addressable universe here (automotive locksmiths) makes fatigue
 # a live risk; above this frequency the dashboard raises a flag.

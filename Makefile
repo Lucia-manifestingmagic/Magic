@@ -36,7 +36,12 @@ backfill: install
 demo: install
 	$(PY) -m app.export
 
-## Export and publish the demo to GitHub Pages (needs `gh auth login` once)
+## Export the CLIENT-BRANDED build (real name and benchmarks) to client-build/
+## Gitignored on purpose: this must never reach the public Pages site.
+client-demo: install
+	DEMO_MODE=0 DEMO_OUT=client-build $(PY) -m app.export
+
+## Export and publish the sanitised demo to GitHub Pages (needs `gh auth login`)
 publish: install
 	./scripts/publish_demo.sh
 
