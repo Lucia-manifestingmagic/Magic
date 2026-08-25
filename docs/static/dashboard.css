@@ -1,8 +1,8 @@
-/* Noble Key Supply — paid media dashboard
+/* Paid media dashboard — client theme
  *
- * Branded from noblekeysupply.com: their navy #233B6B carries the chrome, and
- * their red #E23737 is one of the two channel colours. Nunito Sans and Open
- * Sans are the faces their storefront uses.
+ * Brand colours and faces are taken from the client's storefront. The stylesheet
+ * ships with the static export, so it carries no client name: identity comes
+ * from CLIENT_NAME at render time, not from a comment in here.
  *
  * The brand navy is deliberately NOT used as a chart series colour: at OKLCH
  * L 0.359 and chroma 0.089 it fails both the lightness band and the chroma
