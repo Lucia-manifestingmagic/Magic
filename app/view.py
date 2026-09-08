@@ -109,6 +109,7 @@ def _channel_block(
 
     verdict = metrics.verdict(label, derived, breakeven=breakeven)
     frequency = derived["frequency"].value
+    connected = _connection_status().get(channel or "meta", {}).get("configured", False)
 
     return {
         "key": channel or "blended",
@@ -126,6 +127,7 @@ def _channel_block(
         "frequency_flag": frequency is not None and frequency > C.FREQUENCY_WARN,
         "series": _series_points(current, window),
         "row_count": totals.row_count,
+        "connected": connected,
     }
 
 
@@ -230,6 +232,29 @@ ORGANIC_PLATFORMS = (
     ("youtube", "YouTube"),
     ("facebook", "Facebook"),
 )
+
+
+def _connection_status() -> Dict[str, Dict[str, Any]]:
+    """Which sources actually have credentials, so the UI can say so.
+
+    A source with no credentials is *not connected*. That is a different fact
+    from a connected source that recorded no activity, and conflating them
+    turns a setup gap into an apparent performance result.
+    """
+    import importlib
+    from .connectors import REGISTRY
+
+    out: Dict[str, Dict[str, Any]] = {}
+    for key, module_path in REGISTRY.items():
+        try:
+            module = importlib.import_module(module_path)
+            out[key] = {
+                "configured": bool(module.is_configured()),
+                "label": getattr(module, "LABEL", key),
+            }
+        except ImportError:
+            out[key] = {"configured": False, "label": key}
+    return out
 
 
 def _organic_block(conn: sqlite3.Connection, window: ranges.Window) -> Dict[str, Any]:
@@ -399,4 +424,8 @@ def build(
         "organic": _organic_block(conn, window),
         "creatives": _creative_leaderboard(rows, creatives),
         "health": _health(conn, rows),
+        "connections": _connection_status(),
+        "any_paid_connected": any(
+            _connection_status().get(key, {}).get("configured") for key in active
+        ),
     }

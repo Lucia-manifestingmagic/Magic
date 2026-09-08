@@ -75,6 +75,14 @@
 </div>
 {% endif %}
 
+{% if not v.any_paid_connected %}
+<div class="banner banner-setup" role="status">
+  <strong>Ad accounts not connected.</strong>
+  Organic content below is live client data. Paid figures stay blank until the ad accounts are linked;
+  nothing on this page is estimated or filled in.
+</div>
+{% endif %}
+
 <header class="topbar">
   <div class="topbar-id">
     <h1>{{ v.client.name }}</h1>
@@ -99,7 +107,11 @@
         {{ 'Blended cost per new account' if v.channels | length > 1 else 'Cost per new account' }}
         {{ tip('Total paid spend divided by the number of new accounts it produced in this period. Computed from period totals, not by averaging the daily figures.') }}
       </p>
+      {% if v.any_paid_connected %}
       <p class="hero-figure hero-{{ v.blended.verdict.state }}">{{ m(v.blended.metrics.cac, 'money') }}</p>
+      {% else %}
+      <p class="hero-figure hero-unknown">Not connected</p>
+      {% endif %}
       <p class="hero-context">
         Your cold-sales benchmark is <strong>{{ v.benchmarks.cac | money }}</strong> per account.
         {% if v.blended.metrics.cac.value is not none %}
@@ -124,12 +136,26 @@
       <article class="card verdict-card state-{{ ch.verdict.state }}">
         <header class="verdict-head">
           <span class="channel-key"><span class="swatch swatch-{{ ch.key }}" aria-hidden="true"></span>{{ ch.label }}</span>
+          {% if ch.connected %}
           <span class="pill pill-{{ ch.verdict.state }}">{{ state_icon(ch.verdict.state) }}{{ state_words[ch.verdict.state] }}</span>
+          {% else %}
+          <span class="pill pill-setup">{{ state_icon('unknown') }}Not connected</span>
+          {% endif %}
         </header>
+        {% if not ch.connected %}
+        <p class="verdict-headline">Not connected</p>
+        <p class="verdict-detail">
+          No credentials for this ad account yet, so there is nothing to report.
+          This is a setup gap, not a result: it does not mean zero spend or zero accounts.
+        </p>
+        <p class="verdict-reco">Connect the ad account to start reporting.</p>
+        {% else %}
         <p class="verdict-headline">{{ ch.verdict.headline }}</p>
         <p class="verdict-detail">{{ ch.verdict.detail }}</p>
         <p class="verdict-reco">{{ ch.verdict.recommendation }}</p>
+        {% endif %}
 
+        {% if ch.connected %}
         <dl class="mini-stats">
           <div>
             <dt>Cost per account</dt>
@@ -152,6 +178,7 @@
             <dd class="delta-cell">{{ delta(ch.deltas.roas, 'up') }}</dd>
           </div>
         </dl>
+        {% endif %}
 
         {% if ch.frequency_flag %}
         <p class="flag">
@@ -537,6 +564,14 @@
       <div class="health-item"><dt>Sync</dt><dd>No sync has run yet.</dd></div>
       {% endfor %}
 
+      <div class="health-item">
+        <dt>Sources</dt>
+        <dd>
+          {% for key, source in v.connections.items() %}
+          <span class="tag tag-{{ 'ok' if source.configured else 'setup' }}">{{ source.label }}</span>
+          {% endfor %}
+        </dd>
+      </div>
       <div class="health-item">
         <dt>Attribution window</dt>
         <dd>{{ v.health.attribution_windows | join(' · ') if v.health.attribution_windows else '—' }}</dd>

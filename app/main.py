@@ -120,10 +120,19 @@ def _connection():
 def _startup() -> None:
     conn = _connection()
     try:
-        has_rows = conn.execute("SELECT 1 FROM daily_metrics LIMIT 1").fetchone()
-        if not has_rows and not LIVE_DATA:
+        mode = db.get_setting(conn, "data_mode", "mock")
+        real = conn.execute(
+            "SELECT 1 FROM organic_daily WHERE provider IS NOT 'fixture' LIMIT 1"
+        ).fetchone() or conn.execute("SELECT 1 FROM daily_metrics LIMIT 1").fetchone()
+
+        # Never seed fixtures over a database that has been synced for real.
+        # LIVE_DATA being unset is a config oversight, not an instruction to
+        # overwrite the client's data with invented rows.
+        if mode != "live" and not real and not LIVE_DATA:
             fixtures.load(conn)
-        db.set_setting(conn, "data_mode", "live" if LIVE_DATA else "mock")
+            db.set_setting(conn, "data_mode", "mock")
+        elif LIVE_DATA or mode == "live":
+            db.set_setting(conn, "data_mode", "live")
     finally:
         conn.close()
 
