@@ -88,7 +88,12 @@ def _instagram_posts(conn, ig_user: str, token: str, start: dt.date, end: dt.dat
 
     url = "%s/%s/media" % (_api(), ig_user)
     params = {
-        "fields": "id,caption,media_type,media_product_type,permalink,timestamp",
+        # like_count and comments_count come with instagram_basic. The richer
+        # numbers (reach, views, saves) need instagram_manage_insights, which a
+        # non-Business app cannot hold, so they are fetched separately and are
+        # allowed to come back empty.
+        "fields": ("id,caption,media_type,media_product_type,permalink,timestamp,"
+                   "like_count,comments_count"),
         "since": start.isoformat(),
         "until": end.isoformat(),
         "limit": 100,
@@ -125,11 +130,12 @@ def _instagram_posts(conn, ig_user: str, token: str, start: dt.date, end: dt.dat
                 "published_at": media.get("timestamp"),
                 "reach": values.get("reach"),
                 "views": values.get("views"),
-                "likes": values.get("likes"),
-                "comments": values.get("comments"),
+                # Prefer the insight where we have it, fall back to the field.
+                "likes": values.get("likes", media.get("like_count")),
+                "comments": values.get("comments", media.get("comments_count")),
                 "shares": values.get("shares"),
                 "saves": values.get("saved"),
-                "engagements": values.get("total_interactions"),
+                "engagements": values.get("total_interactions") or _basic_engagements(media),
                 "view_definition": "plays of 1 second or more",
                 "provider": "instagram graph api",
             })
@@ -219,6 +225,15 @@ def _followers(conn, ig_user: str, token: str) -> None:
         "date": dt.date.today().isoformat(), "platform": "instagram",
         "account_id": ig_user, "followers": count,
     }])
+
+
+def _basic_engagements(media: Dict[str, Any]) -> Optional[int]:
+    """Likes plus comments, when insights are unavailable."""
+    likes = base.as_int(media.get("like_count"))
+    comments = base.as_int(media.get("comments_count"))
+    if likes is None and comments is None:
+        return None
+    return (likes or 0) + (comments or 0)
 
 
 def _flatten_insights(payload: Optional[Dict]) -> Dict[str, Any]:

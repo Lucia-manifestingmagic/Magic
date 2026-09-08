@@ -29,10 +29,12 @@ import urllib.request
 VERSION = os.environ.get("META_API_VERSION", "v21.0")
 API = "https://graph.facebook.com/%s" % VERSION
 
+CLIENT = os.environ.get("CLIENT_NAME", "").strip() or "Noble Key Supply"
+
 NEEDED = {
     "ads_read": "Meta ads spend and conversions",
-    "instagram_basic": "Instagram account and media",
-    "instagram_manage_insights": "Instagram reach, views, saves",
+    "instagram_basic": "Instagram account, media, likes and comments",
+    "instagram_manage_insights": "Instagram reach, views, saves (optional)",
     "pages_read_engagement": "Facebook Page insights",
     "pages_show_list": "listing the Pages this token can see",
 }
@@ -115,8 +117,24 @@ def store_app_credentials():
 
 PORT = 8765
 REDIRECT = "http://localhost:%d/" % PORT
-SCOPES = ["ads_read", "instagram_basic", "instagram_manage_insights",
-          "pages_read_engagement", "pages_show_list"]
+# instagram_manage_insights is a Business-app permission. On an app whose type
+# was never set to Business, Meta lists it as "Ready for testing" but rejects it
+# at the OAuth dialog with "Invalid Scopes". Asking for it there fails the whole
+# request, taking the working scopes down with it, so it is requested only when
+# explicitly enabled.
+BASE_SCOPES = ["ads_read", "instagram_basic", "pages_read_engagement", "pages_show_list"]
+OPTIONAL_SCOPES = ["instagram_manage_insights"]
+
+
+def _scopes():
+    override = os.environ.get("META_SCOPES", "").strip() or _env_scopes()
+    if override:
+        return [s.strip() for s in override.split(",") if s.strip()]
+    return list(BASE_SCOPES)
+
+
+def _env_scopes():
+    return env_value("META_SCOPES")
 
 _code = {}
 
@@ -154,19 +172,24 @@ def browser_login(app_id, app_secret):
     dialog = "https://www.facebook.com/v21.0/dialog/oauth?" + urllib.parse.urlencode({
         "client_id": app_id,
         "redirect_uri": REDIRECT,
-        "scope": ",".join(SCOPES),
+        "scope": ",".join(_scopes()),
         "response_type": "code",
+        # Without this, Facebook reuses the earlier asset selection instead of
+        # re-showing the Pages and Instagram chooser. The first attempt granted
+        # no Pages, and every retry silently inherited that.
+        "auth_type": "rerequest",
     })
 
     server = http.server.HTTPServer(("127.0.0.1", PORT), _Handler)
     threading.Thread(target=server.handle_request, daemon=True).start()
 
+    print("Requesting: %s" % ", ".join(_scopes()))
     print("\nOpening Facebook. Approve, and choose Noble Key Supply when asked")
     print("which Pages and Instagram accounts to allow.\n")
     print("If the browser does not open, paste this:\n%s\n" % dialog)
     webbrowser.open(dialog)
 
-    for _ in range(600):
+    for _ in range(1800):   # 15 minutes
         if _code.get("code") or _code.get("error"):
             break
         threading.Event().wait(0.5)
@@ -243,11 +266,16 @@ def main():
         import datetime as dt
         print("\nExpiry: %s" % dt.datetime.fromtimestamp(expires).strftime("%d %b %Y"))
 
-    if missing:
-        print("\nMissing: %s" % ", ".join(missing))
-        print("Regenerate the token with those boxes ticked, then run this again.")
-        print("Nothing was saved.")
+    blocking = [m for m in missing if m not in OPTIONAL_SCOPES]
+    if blocking:
+        print("\nMissing: %s" % ", ".join(blocking))
+        print("These are required. Nothing was saved.")
         return 2
+    if missing:
+        print("\nNot granted (optional): %s" % ", ".join(missing))
+        print("Instagram reach, views and saves need instagram_manage_insights,")
+        print("which requires a Business-type app. Likes, comments, captions and")
+        print("follower counts still work without it.")
 
     # --- what can this token see? ----------------------------------------
     found = {"META_ACCESS_TOKEN": token, "META_APP_ID": app_id, "META_APP_SECRET": app_secret}
@@ -269,7 +297,7 @@ def main():
             "   IG @%s" % ig.get("username") if ig.get("username") else "   (no linked Instagram)",
         ))
 
-    chosen = _pick(page_list, "Noble Key Supply")
+    chosen = _pick(page_list, CLIENT)
     if chosen:
         found["FB_PAGE_ID"] = chosen.get("id")
         ig = chosen.get("instagram_business_account") or {}
@@ -290,9 +318,11 @@ def main():
         print("  none found (fine if you are only doing organic for now)")
     for account in ad_list:
         print("  %-34s %s" % (account.get("name", "?")[:34], account.get("id")))
-    ad = _pick(ad_list, "Noble Key Supply")
+    ad = _pick(ad_list, CLIENT)
     if ad:
         found["META_AD_ACCOUNT_ID"] = ad.get("id")
+    elif ad_list:
+        print("\n  none of these look like %r, so none was saved." % CLIENT)
 
     if not write_env(found):
         print("\nNo .env file found. Nothing saved.")
@@ -310,11 +340,19 @@ def main():
 
 
 def _pick(items, name_hint):
-    """Prefer the asset whose name matches the client; fall back to the only one."""
+    """Only ever return an asset whose name matches the client.
+
+    The earlier version fell back to "the only one available", which on a
+    personal login means the operator's own ad account gets written into the
+    client's configuration. Being one asset short is recoverable; reporting the
+    agency's own spend as the client's is not.
+    """
+    words = [w for w in name_hint.lower().split() if len(w) > 2]
     for item in items:
-        if name_hint.lower() in (item.get("name") or "").lower():
+        name = (item.get("name") or "").lower()
+        if any(word in name for word in words):
             return item
-    return items[0] if len(items) == 1 else None
+    return None
 
 
 if __name__ == "__main__":
