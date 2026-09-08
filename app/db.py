@@ -12,6 +12,13 @@ Shape of the thing:
                     payload, which is what makes adding a third channel a new
                     connector file rather than a rewrite.
 
+    organic_daily   organic post and account stats per platform. Separate from
+                    daily_metrics for the same reason as bio traffic: no spend.
+                    A 'view' means something different on every platform, so the
+                    column carries view_definition alongside it and the UI never
+                    sums views across platforms.
+    organic_followers  follower snapshots — a level, not a flow, so never summed.
+
     bio_link_daily  link-in-bio traffic. Deliberately NOT a row in daily_metrics:
                     it has no spend, so folding it into the paid tables would
                     silently drag blended CAC toward zero.
@@ -109,6 +116,50 @@ CREATE TABLE IF NOT EXISTS bio_link_daily (
     provider     TEXT,
     synced_at    TEXT NOT NULL,
     PRIMARY KEY (date, source)
+);
+
+CREATE TABLE IF NOT EXISTS organic_daily (
+    date            TEXT NOT NULL,
+    platform        TEXT NOT NULL,          -- instagram | facebook | youtube | tiktok
+    account_id      TEXT NOT NULL DEFAULT '',
+    entity_type     TEXT NOT NULL,          -- 'account' or 'post'
+    entity_id       TEXT NOT NULL DEFAULT '',
+    post_caption    TEXT,
+    post_url        TEXT,
+    post_type       TEXT,                   -- reel | video | image | carousel | short
+    published_at    TEXT,
+
+    impressions     INTEGER,
+    reach           INTEGER,
+    views           INTEGER,                -- platform-defined; NOT comparable across platforms
+    engagements     INTEGER,
+    likes           INTEGER,
+    comments        INTEGER,
+    shares          INTEGER,
+    saves           INTEGER,
+    profile_views   INTEGER,
+    follows         INTEGER,
+    link_clicks     INTEGER,
+    watch_seconds   REAL,
+    avg_view_seconds REAL,
+
+    view_definition TEXT,                   -- what this platform counts as a view
+    provider        TEXT,
+    synced_at       TEXT NOT NULL,
+    PRIMARY KEY (date, platform, entity_type, entity_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_organic_date ON organic_daily (date, platform);
+
+-- Follower counts are a snapshot, not a daily total. Summing them across days
+-- is meaningless, so they live apart from the additive columns above.
+CREATE TABLE IF NOT EXISTS organic_followers (
+    date       TEXT NOT NULL,
+    platform   TEXT NOT NULL,
+    account_id TEXT NOT NULL DEFAULT '',
+    followers  INTEGER,
+    synced_at  TEXT NOT NULL,
+    PRIMARY KEY (date, platform, account_id)
 );
 
 CREATE TABLE IF NOT EXISTS creatives (
@@ -320,6 +371,81 @@ def fetch_bio_link(
             (start.isoformat(), end.isoformat()),
         )
     )
+
+
+ORGANIC_COLUMNS: Sequence[str] = ('date', 'platform', 'account_id', 'entity_type', 'entity_id', 'post_caption', 'post_url', 'post_type', 'published_at', 'impressions', 'reach', 'views', 'engagements', 'likes', 'comments', 'shares', 'saves', 'profile_views', 'follows', 'link_clicks', 'watch_seconds', 'avg_view_seconds', 'view_definition', 'provider')
+
+
+def upsert_organic(conn: sqlite3.Connection, rows: Iterable[Dict[str, Any]]) -> int:
+    """Insert-or-replace organic rows. Idempotent by (date, platform, type, id)."""
+    now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    cols = list(ORGANIC_COLUMNS) + ["synced_at"]
+    payload = []
+    for row in rows:
+        record = {c: row.get(c) for c in ORGANIC_COLUMNS}
+        record["synced_at"] = now
+        record["account_id"] = record["account_id"] or ""
+        record["entity_id"] = record["entity_id"] or ""
+        if record["entity_type"] not in ("account", "post"):
+            raise ValueError("entity_type must be account or post: %r" % (record["entity_type"],))
+        payload.append(record)
+    if not payload:
+        return 0
+    updates = ", ".join(
+        "{0}=excluded.{0}".format(c) for c in cols
+        if c not in ("date", "platform", "entity_type", "entity_id")
+    )
+    conn.executemany(
+        "INSERT INTO organic_daily (%s) VALUES (%s) ON CONFLICT"
+        " (date, platform, entity_type, entity_id) DO UPDATE SET %s"
+        % (", ".join(cols), ", ".join(":" + c for c in cols), updates),
+        payload,
+    )
+    conn.commit()
+    return len(payload)
+
+
+def upsert_followers(conn: sqlite3.Connection, rows: Iterable[Dict[str, Any]]) -> int:
+    now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    payload = [(r["date"], r["platform"], r.get("account_id", ""), r.get("followers"), now) for r in rows]
+    if not payload:
+        return 0
+    conn.executemany(
+        "INSERT INTO organic_followers (date, platform, account_id, followers, synced_at)"
+        " VALUES (?, ?, ?, ?, ?) ON CONFLICT (date, platform, account_id)"
+        " DO UPDATE SET followers=excluded.followers, synced_at=excluded.synced_at",
+        payload,
+    )
+    conn.commit()
+    return len(payload)
+
+
+def fetch_organic(
+    conn: sqlite3.Connection, start: dt.date, end: dt.date, entity_type: str = "post"
+) -> List[sqlite3.Row]:
+    return list(conn.execute(
+        "SELECT * FROM organic_daily WHERE entity_type = ? AND date BETWEEN ? AND ? ORDER BY date",
+        (entity_type, start.isoformat(), end.isoformat()),
+    ))
+
+
+def fetch_follower_change(
+    conn: sqlite3.Connection, platform: str, start: dt.date, end: dt.date
+) -> Optional[Dict[str, int]]:
+    """First and last follower snapshot in the window.
+
+    Net change only. Followers are a level, so the difference between two
+    snapshots is the only honest number; a sum would be nonsense.
+    """
+    rows = list(conn.execute(
+        "SELECT date, followers FROM organic_followers WHERE platform = ?"
+        " AND date BETWEEN ? AND ? AND followers IS NOT NULL ORDER BY date",
+        (platform, start.isoformat(), end.isoformat()),
+    ))
+    if len(rows) < 2:
+        return None
+    return {"start": int(rows[0]["followers"]), "end": int(rows[-1]["followers"]),
+            "change": int(rows[-1]["followers"]) - int(rows[0]["followers"])}
 
 
 def upsert_creatives(conn: sqlite3.Connection, rows: Iterable[Dict[str, Any]]) -> int:

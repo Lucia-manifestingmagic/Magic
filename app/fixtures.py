@@ -208,6 +208,89 @@ def _bio_link_rows(rng: random.Random, first_day: dt.date, days: int) -> List[Di
     return rows
 
 
+ORGANIC_PLATFORMS = {
+    "instagram": {"posts_per_week": 5, "views": (2600, 900), "eng": 0.061,
+                  "definition": "plays of 1 second or more", "followers": 4180},
+    "tiktok":    {"posts_per_week": 6, "views": (7400, 4200), "eng": 0.048,
+                  "definition": "an immediate play, with no minimum duration", "followers": 9120},
+    "youtube":   {"posts_per_week": 2, "views": (1450, 620), "eng": 0.072,
+                  "definition": "about 30 seconds, or a click on a short", "followers": 2310},
+}
+
+ORGANIC_TOPICS = [
+    "Programming a 2021 Ford transponder in under 4 minutes",
+    "Why your Lishi pick keeps slipping",
+    "Unboxing: 500 key blanks, sorted by platform",
+    "The cheapest cutting machine that actually holds tolerance",
+    "3 remotes locksmiths keep buying the wrong version of",
+    "Shop tour: how we test every part number in house",
+    "Reading a key code without the VIN",
+    "What wholesale pricing actually looks like at volume",
+]
+
+
+def _organic_rows(rng, first_day, days):
+    """Organic posts and daily account totals per platform.
+
+    Views deliberately differ wildly between platforms because the platforms
+    count them differently. The dashboard never adds them together.
+    """
+    posts, accounts, followers = [], [], []
+    for platform, spec in ORGANIC_PLATFORMS.items():
+        follower_count = spec["followers"]
+        post_index = 0
+        for index in range(days):
+            day = first_day + dt.timedelta(days=index)
+            progress = index / float(max(days - 1, 1))
+
+            # posting cadence
+            if rng.random() < spec["posts_per_week"] / 7.0:
+                mean, sigma = spec["views"]
+                views = max(40, int(_clamped_gauss(rng, mean * (0.7 + 0.6 * progress), sigma, 40)))
+                reach = int(views * _clamped_gauss(rng, 0.82, 0.06, 0.4))
+                engagements = int(reach * _clamped_gauss(rng, spec["eng"], spec["eng"] * 0.3, 0.005))
+                likes = int(engagements * 0.78)
+                comments = int(engagements * 0.09)
+                shares = int(engagements * 0.08)
+                saves = engagements - likes - comments - shares
+                watch = views * _clamped_gauss(rng, 11.5 if platform != "youtube" else 74.0, 4.0, 2.0)
+                posts.append({
+                    "date": day.isoformat(), "platform": platform,
+                    "account_id": "nks-" + platform, "entity_type": "post",
+                    "entity_id": "%s-%04d" % (platform, post_index),
+                    "post_caption": ORGANIC_TOPICS[post_index % len(ORGANIC_TOPICS)],
+                    "post_url": "https://example.invalid/%s/%04d" % (platform, post_index),
+                    "post_type": "reel" if platform == "instagram" else ("short" if platform == "youtube" else "video"),
+                    "published_at": day.isoformat(),
+                    "views": views, "reach": reach, "engagements": engagements,
+                    "likes": likes, "comments": comments, "shares": shares,
+                    "saves": max(saves, 0),
+                    "watch_seconds": round(watch, 1),
+                    "avg_view_seconds": round(watch / max(views, 1), 2),
+                    "view_definition": spec["definition"],
+                    "provider": "fixture",
+                })
+                post_index += 1
+
+            gained = _poisson(rng, 2.2 + 5.5 * progress)
+            follower_count += gained
+            accounts.append({
+                "date": day.isoformat(), "platform": platform,
+                "account_id": "nks-" + platform, "entity_type": "account",
+                "entity_id": "nks-" + platform,
+                "profile_views": int(_clamped_gauss(rng, 120 + 260 * progress, 45, 10)),
+                "follows": gained,
+                "link_clicks": int(_clamped_gauss(rng, 22 + 60 * progress, 12, 2)),
+                "view_definition": spec["definition"],
+                "provider": "fixture",
+            })
+            followers.append({
+                "date": day.isoformat(), "platform": platform,
+                "account_id": "nks-" + platform, "followers": follower_count,
+            })
+    return posts + accounts, followers
+
+
 def build_rows(today: Optional[dt.date] = None) -> Dict[str, List[Dict[str, Any]]]:
     """Generate every fixture row. Deterministic for a given `today`."""
     today = today or dt.date.today()
@@ -381,8 +464,10 @@ def build_rows(today: Optional[dt.date] = None) -> Dict[str, List[Dict[str, Any]
             )
 
     bio_rows = _bio_link_rows(rng, first_day, DAYS)
+    organic_rows, follower_rows = _organic_rows(rng, first_day, DAYS)
 
-    return {"daily": daily, "creatives": creatives, "reach": reach_rows, "bio": bio_rows}
+    return {"daily": daily, "creatives": creatives, "reach": reach_rows, "bio": bio_rows,
+            "organic": organic_rows, "followers": follower_rows}
 
 
 def load(conn=None, today: Optional[dt.date] = None) -> Dict[str, int]:
@@ -397,6 +482,8 @@ def load(conn=None, today: Optional[dt.date] = None) -> Dict[str, int]:
         "creatives": db.upsert_creatives(conn, data["creatives"]),
         "reach": db.upsert_reach(conn, data["reach"]),
         "bio": db.upsert_bio_link(conn, data["bio"]),
+        "organic": db.upsert_organic(conn, data["organic"]),
+        "followers": db.upsert_followers(conn, data["followers"]),
     }
 
     today = today or dt.date.today()
@@ -415,5 +502,5 @@ if __name__ == "__main__":
     result = load()
     print(
         "Seeded {daily} daily rows, {creatives} creatives, {reach} reach windows, "
-        "{bio} days of link-in-bio traffic.".format(**result)
+        "{bio} days of link-in-bio traffic, {organic} organic rows.".format(**result)
     )

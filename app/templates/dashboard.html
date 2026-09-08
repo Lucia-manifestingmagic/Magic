@@ -379,6 +379,61 @@
 </section>
 {% endif %}
 
+<!-- 4c ───────────────────────────────────────── organic content ─────────── -->
+{% if v.organic.has_data %}
+<section class="section">
+  <div class="section-head">
+    <h2>Organic content</h2>
+    <p class="foot-note">
+      Reported per platform and never combined. A view means one second on TikTok and around thirty on
+      YouTube, so a single total across them would mean nothing. Organic carries no spend and is kept
+      out of the cost per account above.
+    </p>
+  </div>
+
+  <div class="organic-grid">
+    {% for p in v.organic.platforms %}
+    <article class="card organic-card">
+      <header class="organic-head">
+        <h3>{{ p.label }}</h3>
+        {% if p.followers %}
+        <span class="pill pill-{{ 'good' if p.followers.change >= 0 else 'critical' }}">
+          {{ '+' if p.followers.change >= 0 }}{{ p.followers.change | number }} followers
+        </span>
+        {% endif %}
+      </header>
+
+      <dl class="organic-stats">
+        <div>
+          <dt>Views {{ tip('This platform counts a view as ' ~ p.view_definition ~ '. Never compare it to another platform\'s view count.') }}</dt>
+          <dd>{{ m(p.metrics.views, 'compact') }}</dd>
+        </div>
+        <div><dt>Posts</dt><dd>{{ m(p.metrics.posts, 'num') }}</dd></div>
+        <div>
+          <dt>Engagement {{ tip('Engagements divided by ' ~ p.engagement_basis ~ ' for this platform. Impressions are deliberately not used, since that rewards repeat delivery rather than interest.') }}</dt>
+          <dd>{{ m(p.metrics.engagement_rate, 'pct') }}</dd>
+        </div>
+        <div><dt>Link clicks</dt><dd>{{ m(p.link_clicks, 'num') }}</dd></div>
+      </dl>
+
+      <p class="organic-def">A view here means {{ p.view_definition }}.</p>
+
+      {% if p.top_posts %}
+      <ol class="organic-posts">
+        {% for post in p.top_posts[:3] %}
+        <li>
+          <span class="organic-post-name">{{ post.caption | truncate(58) }}</span>
+          <span class="organic-post-stat">{{ post.views | compact if post.views is not none else '—' }} views</span>
+        </li>
+        {% endfor %}
+      </ol>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 <!-- 5 ──────────────────────────────────────────── campaigns ─────────────── -->
 <section class="section">
   <h2>Campaigns</h2>

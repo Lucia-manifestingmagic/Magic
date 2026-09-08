@@ -438,6 +438,115 @@ def bio_series(rows: Iterable[Any]) -> List[Tuple[dt.date, BioTotals]]:
 
 
 # ---------------------------------------------------------------------------
+# Organic content
+# ---------------------------------------------------------------------------
+# The trap here is "views". A view is one second on TikTok, one second on
+# Instagram Reels, and roughly thirty seconds (or a click) on YouTube. Adding
+# them produces a number that means nothing and flatters whichever platform
+# counts most loosely. So views are reported per platform, always beside the
+# definition, and there is deliberately no cross-platform total for them.
+
+ORGANIC_FIELDS = (
+    "impressions", "reach", "views", "engagements", "likes", "comments",
+    "shares", "saves", "profile_views", "follows", "link_clicks", "watch_seconds",
+)
+
+# What each platform counts as a view. Rendered next to the number.
+VIEW_DEFINITIONS = {
+    "instagram": "plays of 1 second or more",
+    "facebook": "1 second or more",
+    "tiktok": "an immediate play, with no minimum duration",
+    "youtube": "about 30 seconds, or a click on a short",
+}
+
+# Views are never comparable across platforms; these are.
+CROSS_PLATFORM_SAFE = ("posts", "engagements", "link_clicks", "follows", "profile_views")
+
+
+@dataclasses.dataclass
+class OrganicTotals:
+    impressions: float = 0.0
+    reach: float = 0.0
+    views: float = 0.0
+    engagements: float = 0.0
+    likes: float = 0.0
+    comments: float = 0.0
+    shares: float = 0.0
+    saves: float = 0.0
+    profile_views: float = 0.0
+    follows: float = 0.0
+    link_clicks: float = 0.0
+    watch_seconds: float = 0.0
+    posts: int = 0
+    present: Set[str] = dataclasses.field(default_factory=set)
+
+
+def sum_organic(rows: Iterable[Any]) -> OrganicTotals:
+    totals = OrganicTotals()
+    seen_posts = set()
+    for row in rows:
+        for field in ORGANIC_FIELDS:
+            try:
+                raw = row[field]
+            except (KeyError, IndexError):
+                continue
+            if raw is None:
+                continue
+            totals.present.add(field)
+            setattr(totals, field, getattr(totals, field) + float(raw))
+        try:
+            entity = row["entity_id"]
+        except (KeyError, IndexError):
+            entity = None
+        if entity and entity not in seen_posts:
+            seen_posts.add(entity)
+    totals.posts = len(seen_posts)
+    return totals
+
+
+def derive_organic(totals: OrganicTotals, platform: str = "") -> Dict[str, Metric]:
+    """Per-platform organic metrics.
+
+    Engagement rate uses reach where the platform reports it and views
+    otherwise, because dividing by impressions rewards repeat delivery rather
+    than genuine interest. Which denominator was used is stated in the UI.
+    """
+    def field(name):
+        return getattr(totals, name) if name in totals.present else None
+
+    reach, views = field("reach"), field("views")
+    engagements = field("engagements")
+
+    out: Dict[str, Metric] = {}
+    out["posts"] = Metric(float(totals.posts))
+    for name in ("views", "reach", "impressions", "engagements", "likes", "comments",
+                 "shares", "saves", "profile_views", "follows", "link_clicks"):
+        value = field(name)
+        out[name] = Metric(value, None if value is not None else "Not reported by this platform.")
+
+    denominator = reach if reach is not None else views
+    out["engagement_rate"] = _div(
+        engagements, denominator,
+        zero_reason="Nothing was delivered in this period.",
+        missing_reason="Needs engagements plus reach or views from this platform.",
+    )
+    out["engagement_basis"] = Metric(None, "reach" if reach is not None else "views")
+
+    out["avg_watch_seconds"] = _div(
+        field("watch_seconds"), views,
+        zero_reason="No views recorded.",
+        missing_reason="This platform does not report watch time.",
+    )
+    out["views_per_post"] = _div(
+        views, float(totals.posts) if totals.posts else None,
+        zero_reason="No posts published in this period.",
+        missing_reason="No view data for this platform.",
+    )
+    out["view_definition"] = Metric(None, VIEW_DEFINITIONS.get(platform, "varies by platform"))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Pacing
 # ---------------------------------------------------------------------------
 

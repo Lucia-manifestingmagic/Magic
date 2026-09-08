@@ -224,6 +224,67 @@ def _bio_block(conn: sqlite3.Connection, window: ranges.Window, prior: ranges.Wi
     }
 
 
+ORGANIC_PLATFORMS = (
+    ("instagram", "Instagram"),
+    ("tiktok", "TikTok"),
+    ("youtube", "YouTube"),
+    ("facebook", "Facebook"),
+)
+
+
+def _organic_block(conn: sqlite3.Connection, window: ranges.Window) -> Dict[str, Any]:
+    """Organic content, per platform and never blended.
+
+    There is deliberately no total views figure. A view is one second on TikTok
+    and roughly thirty on YouTube, so a combined number would mean nothing and
+    would reward whichever platform counts most loosely.
+    """
+    posts = db.fetch_organic(conn, window.start, window.end, "post")
+    accounts = db.fetch_organic(conn, window.start, window.end, "account")
+
+    platforms = []
+    for key, label in ORGANIC_PLATFORMS:
+        platform_posts = [r for r in posts if r["platform"] == key]
+        platform_accounts = [r for r in accounts if r["platform"] == key]
+        if not platform_posts and not platform_accounts:
+            continue
+
+        totals = metrics.sum_organic(platform_posts)
+        account_totals = metrics.sum_organic(platform_accounts)
+        derived = metrics.derive_organic(totals, key)
+        account_derived = metrics.derive_organic(account_totals, key)
+        follower = db.fetch_follower_change(conn, key, window.start, window.end)
+
+        top = sorted(
+            platform_posts,
+            key=lambda r: (r["views"] if r["views"] is not None else -1),
+            reverse=True,
+        )[:5]
+
+        platforms.append({
+            "key": key,
+            "label": label,
+            "metrics": _metrics_json(derived),
+            "profile_views": _metric_json(account_derived["profile_views"]),
+            "link_clicks": _metric_json(account_derived["link_clicks"]),
+            "follows": _metric_json(account_derived["follows"]),
+            "view_definition": derived["view_definition"].reason,
+            "engagement_basis": derived["engagement_basis"].reason,
+            "followers": follower,
+            "top_posts": [{
+                "id": r["entity_id"],
+                "caption": r["post_caption"] or "(no caption)",
+                "url": r["post_url"],
+                "type": r["post_type"],
+                "date": r["date"],
+                "views": r["views"],
+                "engagements": r["engagements"],
+            } for r in top],
+        })
+
+    return {"has_data": bool(platforms), "platforms": platforms}
+
+
 def _health(conn: sqlite3.Connection, rows: Sequence[sqlite3.Row]) -> Dict[str, Any]:
     syncs = []
     for row in db.latest_sync(conn):
@@ -331,6 +392,7 @@ def build(
             key=lambda item: -item["spend"],
         ),
         "bio": _bio_block(conn, window, prior),
+        "organic": _organic_block(conn, window),
         "creatives": _creative_leaderboard(rows, creatives),
         "health": _health(conn, rows),
     }

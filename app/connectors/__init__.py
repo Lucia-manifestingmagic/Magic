@@ -12,7 +12,14 @@ from __future__ import annotations
 
 from typing import Callable, Dict
 
+# key -> module. The sync CLI walks this in order; each module exposes
+# LABEL, is_configured() and sync(conn, start, end) -> rows upserted.
 REGISTRY: Dict[str, str] = {
+    # paid
     "meta": "app.connectors.meta",
     "youtube": "app.connectors.google_ads",
+    # organic
+    "meta_organic": "app.connectors.meta_organic",
+    "youtube_organic": "app.connectors.youtube_organic",
+    "tiktok_organic": "app.connectors.tiktok_organic",
 }

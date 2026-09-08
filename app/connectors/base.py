@@ -79,3 +79,67 @@ def date_chunks(
         out.append((cursor, chunk_end))
         cursor = chunk_end + dt.timedelta(days=1)
     return out
+
+
+# --- HTTP -------------------------------------------------------------------
+
+import time as _time
+from typing import Callable
+
+import httpx
+
+
+class ConnectorError(RuntimeError):
+    """Raised when a connector cannot complete. Surfaced in the UI footer."""
+
+
+def get_json(
+    url: str,
+    params: Optional[Dict[str, Any]] = None,
+    headers: Optional[Dict[str, str]] = None,
+    *,
+    method: str = "GET",
+    json_body: Optional[Dict[str, Any]] = None,
+    attempts: int = 5,
+    timeout: float = 60.0,
+) -> Dict[str, Any]:
+    """One HTTP call with backoff on the failures these APIs actually produce.
+
+    Retries rate limits and 5xx with exponential backoff. Does not retry 4xx
+    other than 429, because a bad token or a bad field list will fail exactly
+    the same way the second time.
+    """
+    delay = 2.0
+    last: Optional[str] = None
+    for attempt in range(attempts):
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                response = client.request(
+                    method, url, params=params, headers=headers, json=json_body
+                )
+        except httpx.RequestError as exc:
+            last = "network error: %s" % exc
+        else:
+            if response.status_code < 400:
+                return response.json()
+            last = "HTTP %d: %s" % (response.status_code, response.text[:400])
+            if response.status_code not in (429, 500, 502, 503, 504):
+                raise ConnectorError(last)
+        if attempt < attempts - 1:
+            _time.sleep(delay)
+            delay *= 2
+    raise ConnectorError(last or "request failed")
+
+
+def env(name: str, default: str = "") -> str:
+    import os
+    return os.environ.get(name, "").strip() or default
+
+
+def require(name: str) -> str:
+    value = env(name)
+    if not value:
+        raise ConnectorError(
+            "%s is not set. See .env.example and README for how to obtain it." % name
+        )
+    return value
