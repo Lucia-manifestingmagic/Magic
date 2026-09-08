@@ -28,7 +28,11 @@ test: install
 auth-youtube:
 	python3 scripts/auth_youtube.py $(JSON)
 
-## Verify a Meta System User token and discover the Page/IG/ad account IDs
+## Store the Meta App ID and secret (secret typed hidden)
+auth-meta-app:
+	python3 scripts/auth_meta.py --app-only
+
+## Exchange a Meta user token for a long-lived one and discover the asset IDs
 auth-meta:
 	python3 scripts/auth_meta.py
 

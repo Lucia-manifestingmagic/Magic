@@ -79,7 +79,41 @@ def env_value(key, path=".env"):
     return ""
 
 
+def store_app_credentials():
+    """Capture just the App ID and secret, so the secret is never on screen."""
+    print("\nMeta app credentials\n" + "-" * 46)
+    print("From developers.facebook.com > App settings > Basic.")
+    print("The secret is typed blind: nothing appears, no dots, no cursor move.")
+    print("Paste it and press Enter.\n")
+
+    app_id = input("App ID (safe to show): ").strip()
+    if not app_id.isdigit():
+        print("\nThat does not look like an App ID. It is a long number, digits only.")
+        return 1
+
+    secret = getpass.getpass("App secret (hidden):  ").strip()
+    if len(secret) < 24:
+        print("\nThat secret looks too short. Did the paste land? Nothing saved.")
+        return 1
+
+    if not write_env({"META_APP_ID": app_id, "META_APP_SECRET": secret}):
+        print("\nNo .env file found. Nothing saved.")
+        return 1
+
+    print("\n" + "=" * 56)
+    print("Saved to .env:")
+    print("  META_APP_ID      %s" % app_id)
+    print("  META_APP_SECRET  %d characters, hidden" % len(secret))
+    print("=" * 56)
+    print("\nNext: generate a User token in the Graph API Explorer,")
+    print("then run  make auth-meta\n")
+    return 0
+
+
 def main():
+    if "--app-only" in sys.argv:
+        return store_app_credentials()
+
     print("\nMeta connection\n" + "-" * 46)
 
     print("Paste the short-lived User token from the Graph API Explorer.")
