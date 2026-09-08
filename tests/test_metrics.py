@@ -368,3 +368,28 @@ def test_bio_upserts_are_idempotent():
     rows = db.fetch_bio_link(conn, dt.date(2026, 8, 1), dt.date(2026, 8, 1))
     assert len(rows) == 1
     assert rows[0]["link_clicks"] == 250
+
+
+def test_blended_excludes_channels_that_are_switched_off():
+    """A channel omitted from ACTIVE_CHANNELS must not reach the headline number.
+
+    Otherwise blended CAC quietly includes spend from a channel the page never
+    shows, and the figure cannot be reconciled against what is on screen.
+    """
+    conn = db.connect(":memory:")
+    db.init(conn)
+    common = {"level": "ad", "date": "2026-09-01", "adset_id": "1", "ad_id": "1"}
+    db.upsert_daily(conn, [
+        dict(common, channel="meta", campaign_id="m", spend=1000.0, conversions=4.0),
+        dict(common, channel="youtube", campaign_id="y", spend=5000.0, conversions=1.0),
+    ])
+    day = dt.date(2026, 9, 1)
+
+    both = metrics.derive(metrics.sum_rows(db.fetch_rows(conn, day, day)))["cac"].value
+    meta_only = metrics.derive(
+        metrics.sum_rows(db.fetch_rows(conn, day, day, channels=["meta"]))
+    )["cac"].value
+
+    assert both == pytest.approx(6000.0 / 5.0)     # 1200
+    assert meta_only == pytest.approx(1000.0 / 4.0)  # 250
+    assert meta_only != both

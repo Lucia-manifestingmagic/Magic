@@ -164,10 +164,23 @@ def breakeven_roas(monthly_spend: float) -> float:
 # --- Channels --------------------------------------------------------------
 # Adding a channel means adding an entry here and a connector module. The UI
 # and the metrics layer read this list and never name a channel directly.
-CHANNELS = {
-    "meta": {"label": "Meta", "detail": "Facebook + Instagram"},
-    "youtube": {"label": "YouTube", "detail": "Google Ads video campaigns"},
+ALL_CHANNELS = {
+    "meta": {"label": "Meta ads", "detail": "Facebook + Instagram"},
+    # Labelled "YouTube ads" rather than "YouTube" because the organic section
+    # further down the page also has a YouTube panel, and they are different
+    # numbers from different accounts.
+    "youtube": {"label": "YouTube ads", "detail": "Google Ads video campaigns"},
 }
+
+# Which paid channels the client is actually running. A channel listed here but
+# not yet spending reads as "not running"; a channel left out does not appear at
+# all. Better to omit it than to show an empty card that looks like a failure.
+ACTIVE_CHANNELS = [
+    key.strip() for key in _s("ACTIVE_CHANNELS", "meta,youtube").split(",")
+    if key.strip() in ALL_CHANNELS
+] or ["meta"]
+
+CHANNELS = {key: ALL_CHANNELS[key] for key in ACTIVE_CHANNELS}
 
 # Ads below this spend in the selected period are excluded from the creative
 # leaderboard, so a $12 ad with one lucky conversion cannot top the table.

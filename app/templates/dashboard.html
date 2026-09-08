@@ -96,8 +96,8 @@
   <div class="hero-row">
     <div class="hero">
       <p class="hero-label">
-        Blended cost per new account
-        {{ tip('Total spend across Meta and YouTube divided by the number of new accounts they produced in this period. Computed from period totals, not by averaging the daily figures.') }}
+        {{ 'Blended cost per new account' if v.channels | length > 1 else 'Cost per new account' }}
+        {{ tip('Total paid spend divided by the number of new accounts it produced in this period. Computed from period totals, not by averaging the daily figures.') }}
       </p>
       <p class="hero-figure hero-{{ v.blended.verdict.state }}">{{ m(v.blended.metrics.cac, 'money') }}</p>
       <p class="hero-context">

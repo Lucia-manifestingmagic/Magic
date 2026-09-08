@@ -318,12 +318,16 @@ def build(
     window = ranges.resolve(range_key, today)
     prior = window.previous()
 
-    rows = db.fetch_rows(conn, window.start, window.end)
-    prior_rows = db.fetch_rows(conn, prior.start, prior.end)
+    # Only channels the client is actually running. A channel switched off in
+    # ACTIVE_CHANNELS must not reach the blended figure either, or the headline
+    # number silently includes spend from a channel the page never shows.
+    active = list(C.CHANNELS)
+    rows = db.fetch_rows(conn, window.start, window.end, channels=active)
+    prior_rows = db.fetch_rows(conn, prior.start, prior.end, channels=active)
     creatives = db.fetch_creatives(conn)
 
     month_start, _ = ranges.month_bounds(today)
-    mtd_rows = db.fetch_rows(conn, month_start, ranges.last_complete_day(today))
+    mtd_rows = db.fetch_rows(conn, month_start, ranges.last_complete_day(today), channels=active)
     mtd_spend = metrics.sum_rows(mtd_rows).spend
     pace = metrics.pacing(mtd_spend, today)
     breakeven = C.breakeven_roas(pace.planned_monthly)
