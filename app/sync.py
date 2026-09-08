@@ -38,6 +38,19 @@ def run(days: int, only: List[str], backfill: bool) -> int:
     conn = db.connect()
     db.init(conn)
 
+    # A database seeded with fixtures must never be topped up with real rows.
+    # The two would sit side by side, indistinguishable on screen, and invented
+    # posts would be reported to the client as their own. Clear it once, on the
+    # first live sync, rather than trusting anyone to remember.
+    if db.get_setting(conn, "data_mode", "mock") == "mock":
+        wiped = 0
+        for table in ("daily_metrics", "organic_daily", "organic_followers",
+                      "bio_link_daily", "reach_periods", "creatives",
+                      "raw_snapshots", "sync_runs"):
+            wiped += conn.execute("DELETE FROM %s" % table).rowcount
+        conn.commit()
+        print("  Cleared %d fixture rows before the first live sync." % wiped)
+
     failures = 0
     for key, module_path in REGISTRY.items():
         if only and key not in only:

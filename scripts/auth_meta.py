@@ -33,6 +33,7 @@ CLIENT = os.environ.get("CLIENT_NAME", "").strip() or "Noble Key Supply"
 
 NEEDED = {
     "ads_read": "Meta ads spend and conversions",
+    "business_management": "seeing assets held via the Business Portfolio",
     "instagram_basic": "Instagram account, media, likes and comments",
     "instagram_manage_insights": "Instagram reach, views, saves (optional)",
     "pages_read_engagement": "Facebook Page insights",
@@ -122,7 +123,12 @@ REDIRECT = "http://localhost:%d/" % PORT
 # at the OAuth dialog with "Invalid Scopes". Asking for it there fails the whole
 # request, taking the working scopes down with it, so it is requested only when
 # explicitly enabled.
-BASE_SCOPES = ["ads_read", "instagram_basic", "pages_read_engagement", "pages_show_list"]
+# business_management is required to enumerate assets held through a Business
+# Portfolio. Without it /me/accounts only returns Pages where the user has a
+# classic Page role, and /me/adaccounts only their personally owned accounts,
+# which is how a portfolio-assigned Page comes back as "none".
+BASE_SCOPES = ["ads_read", "business_management", "instagram_basic",
+               "pages_read_engagement", "pages_show_list"]
 OPTIONAL_SCOPES = ["instagram_manage_insights"]
 
 
@@ -280,16 +286,32 @@ def main():
     # --- what can this token see? ----------------------------------------
     found = {"META_ACCESS_TOKEN": token, "META_APP_ID": app_id, "META_APP_SECRET": app_secret}
 
-    pages, error = call("me/accounts", token, {
-        "fields": "id,name,access_token,instagram_business_account{id,username}"})
-    page_list = (pages or {}).get("data", []) if not error else []
+    fields = "id,name,access_token,instagram_business_account{id,username}"
+    pages, error = call("me/accounts", token, {"fields": fields})
+    page_list = list((pages or {}).get("data", []) if not error else [])
     if error:
-        print("\nCould not list Pages: %s" % error)
+        print("\nCould not list Pages via /me/accounts: %s" % error)
+
+    # Portfolio-held Pages do not appear under /me/accounts. Walk the businesses
+    # this user belongs to and read both owned and client (shared) assets.
+    businesses, error = call("me/businesses", token, {"fields": "id,name"})
+    seen = {p.get("id") for p in page_list}
+    for business in (businesses or {}).get("data", []) if not error else []:
+        print("  portfolio: %s" % business.get("name"))
+        for edge in ("owned_pages", "client_pages"):
+            extra, edge_error = call("%s/%s" % (business["id"], edge), token, {"fields": fields})
+            if edge_error:
+                continue
+            for page in (extra or {}).get("data", []):
+                if page.get("id") not in seen:
+                    seen.add(page.get("id"))
+                    page_list.append(page)
 
     print("\nPages this token can read:")
     if not page_list:
-        print("  none. The Page has to be assigned to the System User as an asset,")
-        print("  not merely present in the business portfolio.")
+        print("  none, via either /me/accounts or the business portfolios.")
+        print("  Your user needs a task assignment on the Page itself, not just")
+        print("  the Page being present in the portfolio.")
     for page in page_list:
         ig = page.get("instagram_business_account") or {}
         print("  %-34s page id %s%s" % (
@@ -312,7 +334,18 @@ def main():
             print("\nNo Page token returned. pages_show_list may be missing.")
 
     accounts, error = call("me/adaccounts", token, {"fields": "id,name,account_status"})
-    ad_list = (accounts or {}).get("data", []) if not error else []
+    ad_list = list((accounts or {}).get("data", []) if not error else [])
+    seen_ads = {a.get("id") for a in ad_list}
+    for business in (businesses or {}).get("data", []) if businesses else []:
+        for edge in ("owned_ad_accounts", "client_ad_accounts"):
+            extra, edge_error = call("%s/%s" % (business["id"], edge), token,
+                                     {"fields": "id,name,account_status"})
+            if edge_error:
+                continue
+            for account in (extra or {}).get("data", []):
+                if account.get("id") not in seen_ads:
+                    seen_ads.add(account.get("id"))
+                    ad_list.append(account)
     print("\nAd accounts this token can read:")
     if not ad_list:
         print("  none found (fine if you are only doing organic for now)")
