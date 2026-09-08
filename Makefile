@@ -24,6 +24,10 @@ seed: install
 test: install
 	.venv/bin/pytest -q
 
+## One-time YouTube sign-in; prints the refresh token for .env
+auth-youtube:
+	python3 scripts/auth_youtube.py
+
 ## Incremental sync of the last 28 days from the live APIs
 sync: install
 	$(PY) -m app.sync --days 28
