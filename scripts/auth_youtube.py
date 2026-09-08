@@ -163,7 +163,11 @@ def main():
         "response_type": "code",
         "scope": SCOPES,
         "access_type": "offline",
-        "prompt": "consent",
+        # select_account as well as consent: consent alone re-asks for
+        # permissions but lets Google silently reuse the last account, which
+        # is how the wrong channel gets authorised without anyone seeing a
+        # chooser. This forces the picker every time.
+        "prompt": "select_account consent",
     })
 
     server = http.server.HTTPServer(("127.0.0.1", PORT), Handler)
