@@ -1,13 +1,18 @@
 """One-time YouTube authorisation. Prints the refresh token to paste into .env.
 
-    python scripts/auth_youtube.py
+    python scripts/auth_youtube.py                    # finds the JSON for you
+    python scripts/auth_youtube.py path/to/client.json
 
-Opens a browser, asks you to pick the Google account that manages Noble Key
-Supply's channel, and prints a refresh token that does not expire. Run it once.
+Reads the OAuth client JSON that Google Cloud gives you on download, so there
+is nothing to copy by hand. Looks in this folder, then ~/Downloads, then falls
+back to asking. Opens a browser, you pick the Google account that manages the
+channel, and it prints a refresh token that does not expire. Run it once.
 """
 
+import glob
 import http.server
 import json
+import os
 import socket
 import sys
 import threading
@@ -45,10 +50,63 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
+def find_client_json(explicit=None):
+    """Locate the OAuth client JSON Google Cloud hands you on download."""
+    if explicit:
+        return explicit if os.path.isfile(explicit) else None
+    patterns = [
+        "client_secret*.json",
+        os.path.expanduser("~/Downloads/client_secret*.json"),
+        os.path.expanduser("~/Desktop/client_secret*.json"),
+    ]
+    found = []
+    for pattern in patterns:
+        found.extend(glob.glob(pattern))
+    if not found:
+        return None
+    # Most recent download wins, in case an earlier one was superseded.
+    return max(found, key=os.path.getmtime)
+
+
+def read_client_json(path):
+    """Both 'installed' (desktop) and 'web' clients carry the same two fields."""
+    try:
+        with open(path) as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError) as exc:
+        print("Could not read %s: %s" % (path, exc))
+        return None, None
+    block = payload.get("installed") or payload.get("web") or {}
+    client_id = block.get("client_id")
+    client_secret = block.get("client_secret")
+    if not client_id or not client_secret:
+        print("%s has no client_id/client_secret. Is it the right file?" % path)
+        return None, None
+    if "web" in payload and "installed" not in payload:
+        print("\nHeads up: this is a Web application client, not a Desktop one.")
+        print("Add %s to its Authorized redirect URIs, or create a Desktop client." % REDIRECT)
+    return client_id, client_secret
+
+
 def main():
     print("\nYouTube authorisation\n" + "-" * 40)
-    client_id = input("Paste your OAuth Client ID:     ").strip()
-    client_secret = input("Paste your OAuth Client Secret: ").strip()
+
+    explicit = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else None
+    path = find_client_json(explicit)
+    client_id = client_secret = None
+
+    if path:
+        client_id, client_secret = read_client_json(path)
+        if client_id:
+            print("Using %s" % path)
+            print("Client ID: %s\n" % (client_id[:28] + "..."))
+
+    if not client_id:
+        if not path:
+            print("No client_secret*.json found here or in ~/Downloads.")
+        print("Falling back to manual entry.\n")
+        client_id = input("Paste your OAuth Client ID:     ").strip()
+        client_secret = input("Paste your OAuth Client Secret: ").strip()
     if not client_id or not client_secret:
         print("Both are required. Stopping.")
         return 1

@@ -26,7 +26,7 @@ test: install
 
 ## One-time YouTube sign-in; prints the refresh token for .env
 auth-youtube:
-	python3 scripts/auth_youtube.py
+	python3 scripts/auth_youtube.py $(JSON)
 
 ## Incremental sync of the last 28 days from the live APIs
 sync: install
