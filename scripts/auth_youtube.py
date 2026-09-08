@@ -50,6 +50,47 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
+def write_env(values, path=".env"):
+    """Update the YT_ keys in .env in place, leaving everything else alone.
+
+    Writing straight to the file means the refresh token never has to be
+    printed, pasted, or read aloud. It is a live credential; the fewer places
+    it lands the better.
+    """
+    if not os.path.isfile(path):
+        return False
+    with open(path) as handle:
+        lines = handle.read().splitlines()
+
+    remaining = dict(values)
+    out = []
+    for line in lines:
+        key = line.split("=", 1)[0].strip() if "=" in line else ""
+        if key in remaining:
+            out.append("%s=%s" % (key, remaining.pop(key)))
+        else:
+            out.append(line)
+    for key, value in remaining.items():
+        out.append("%s=%s" % (key, value))
+
+    with open(path, "w") as handle:
+        handle.write("\n".join(out) + "\n")
+    return True
+
+
+def _client_name_from_env(path=".env"):
+    """The client name the dashboard is configured for, used as a sanity check."""
+    for source in (path, ".env.example"):
+        if not os.path.isfile(source):
+            continue
+        for line in open(source):
+            if line.startswith("CLIENT_NAME="):
+                value = line.split("=", 1)[1].strip()
+                if value:
+                    return value
+    return "Noble Key Supply"
+
+
 def find_client_json(explicit=None):
     """Locate the OAuth client JSON Google Cloud hands you on download."""
     if explicit:
@@ -164,6 +205,7 @@ def main():
         return 1
 
     channel_id = ""
+    channel_title = ""
     try:
         channel_request = urllib.request.Request(
             "https://www.googleapis.com/youtube/v3/channels?part=id,snippet&mine=true",
@@ -173,18 +215,60 @@ def main():
             items = json.load(response).get("items") or []
         if items:
             channel_id = items[0]["id"]
-            print("\nSigned in to channel: %s" % items[0]["snippet"]["title"])
+            channel_title = items[0]["snippet"]["title"]
+            print("\nSigned in to channel: %s" % channel_title)
     except Exception:
         pass
 
-    print("\n" + "=" * 60)
-    print("Paste these four lines into your .env file:\n")
-    print("YT_CLIENT_ID=%s" % client_id)
-    print("YT_CLIENT_SECRET=%s" % client_secret)
-    print("YT_REFRESH_TOKEN=%s" % refresh)
-    print("YT_CHANNEL_ID=%s" % (channel_id or "<paste the channel ID here>"))
-    print("=" * 60 + "\n")
-    return 0
+    # Google returns whichever channel the chosen account IS, not the ones it
+    # manages. Picking the personal account at the chooser silently authorises
+    # the wrong channel, and the dashboard would then report the agency's own
+    # numbers under the client's name. Check rather than trust the operator to
+    # notice one line of output.
+    expected = os.environ.get("CLIENT_NAME", "").strip() or _client_name_from_env()
+    if expected and channel_title:
+        words = [w for w in expected.lower().split() if len(w) > 2]
+        if not any(w in channel_title.lower() for w in words):
+            print("\n" + "!" * 60)
+            print("STOP. That channel does not look like %r." % expected)
+            print("You authorised: %s" % channel_title)
+            print("")
+            print("At the Google account chooser you have to pick the CHANNEL,")
+            print("not just the account. If the client's channel is a Brand")
+            print("Account you manage, it appears as a second choice after you")
+            print("pick your login.")
+            print("")
+            print("Nothing was saved. Re-run and choose the client's channel.")
+            print("!" * 60 + "\n")
+            return 2
+
+    values = {
+        "YT_CLIENT_ID": client_id,
+        "YT_CLIENT_SECRET": client_secret,
+        "YT_REFRESH_TOKEN": refresh,
+        "YT_CHANNEL_ID": channel_id or "",
+    }
+
+    if "--print" in sys.argv:
+        print("\n" + "=" * 60)
+        for key, value in values.items():
+            print("%s=%s" % (key, value))
+        print("=" * 60 + "\n")
+        return 0
+
+    if write_env(values):
+        print("\n" + "=" * 60)
+        print("Written to .env. The refresh token was not printed.")
+        print("  YT_CHANNEL_ID=%s" % (channel_id or "NOT FOUND - set this by hand"))
+        print("  YT_REFRESH_TOKEN=<%d characters, saved>" % len(refresh))
+        print("=" * 60)
+        print("\nNext:  python -m app.sync --days 28 --only youtube_organic\n")
+        if not channel_id:
+            return 1
+        return 0
+
+    print("No .env file found. Re-run with --print to show the values instead.")
+    return 1
 
 
 if __name__ == "__main__":
