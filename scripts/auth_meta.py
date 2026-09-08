@@ -16,9 +16,12 @@ Nothing is echoed as you type and no token is ever printed.
 """
 
 import getpass
+import http.server
 import json
 import os
 import sys
+import threading
+import webbrowser
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -110,26 +113,94 @@ def store_app_credentials():
     return 0
 
 
+PORT = 8765
+REDIRECT = "http://localhost:%d/" % PORT
+SCOPES = ["ads_read", "instagram_basic", "instagram_manage_insights",
+          "pages_read_engagement", "pages_show_list"]
+
+_code = {}
+
+
+class _Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        _code["code"] = (params.get("code") or [None])[0]
+        _code["error"] = (params.get("error_description") or params.get("error") or [None])[0]
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+        note = "You can close this tab and return to the terminal."
+        if _code.get("error"):
+            note = "Authorisation failed: %s" % _code["error"]
+        self.wfile.write(("<body style='font:16px system-ui;padding:40px'>%s</body>" % note).encode())
+
+    def log_message(self, *args):
+        pass
+
+
+def browser_login(app_id, app_secret):
+    """Request the scopes directly, bypassing the Explorer's permission picker.
+
+    The Explorer only lists a subset of activated permissions, and
+    instagram_manage_insights is one it omits. The OAuth dialog accepts any
+    scope the app has activated, so we ask for them explicitly.
+    """
+    import socket
+    with socket.socket() as probe:
+        if probe.connect_ex(("127.0.0.1", PORT)) == 0:
+            print("Port %d is busy. Close whatever is using it and retry." % PORT)
+            return None
+
+    dialog = "https://www.facebook.com/v21.0/dialog/oauth?" + urllib.parse.urlencode({
+        "client_id": app_id,
+        "redirect_uri": REDIRECT,
+        "scope": ",".join(SCOPES),
+        "response_type": "code",
+    })
+
+    server = http.server.HTTPServer(("127.0.0.1", PORT), _Handler)
+    threading.Thread(target=server.handle_request, daemon=True).start()
+
+    print("\nOpening Facebook. Approve, and choose Noble Key Supply when asked")
+    print("which Pages and Instagram accounts to allow.\n")
+    print("If the browser does not open, paste this:\n%s\n" % dialog)
+    webbrowser.open(dialog)
+
+    for _ in range(600):
+        if _code.get("code") or _code.get("error"):
+            break
+        threading.Event().wait(0.5)
+
+    if _code.get("error") or not _code.get("code"):
+        print("No authorisation received: %s" % (_code.get("error") or "timed out"))
+        return None
+
+    exchanged, error = call("oauth/access_token", "", {
+        "client_id": app_id, "client_secret": app_secret,
+        "redirect_uri": REDIRECT, "code": _code["code"],
+    })
+    if error:
+        print("Could not exchange the code: %s" % error)
+        return None
+    return (exchanged or {}).get("access_token")
+
+
 def main():
     if "--app-only" in sys.argv:
         return store_app_credentials()
 
     print("\nMeta connection\n" + "-" * 46)
 
-    print("Paste the short-lived User token from the Graph API Explorer.")
-    print("Nothing will appear as you type.\n")
-    token = getpass.getpass("User token: ").strip()
-    if not token:
-        print("No token given. Nothing saved.")
+    app_id = env_value("META_APP_ID")
+    app_secret = env_value("META_APP_SECRET")
+    if not (app_id and app_secret):
+        print("Run  make auth-meta-app  first to store the App ID and secret.")
         return 1
 
-    app_id = env_value("META_APP_ID") or input("App ID:     ").strip()
-    app_secret = env_value("META_APP_SECRET")
-    if not app_secret:
-        app_secret = getpass.getpass("App secret (hidden): ").strip()
-    if not (app_id and app_secret):
-        print("App ID and secret are both needed to make the token long-lived.")
+    token = browser_login(app_id, app_secret)
+    if not token:
         return 1
+    print("Token received.")
 
     # --- short-lived -> long-lived ---------------------------------------
     exchanged, error = call("oauth/access_token", token, {
