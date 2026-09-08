@@ -30,11 +30,19 @@ DAY_METRICS = [
 VIDEO_METRICS = ["views", "estimatedMinutesWatched", "averageViewDuration", "likes", "comments", "shares"]
 
 
-def is_configured() -> bool:
+def _has_oauth() -> bool:
     return bool(
         base.env("YT_CLIENT_ID") and base.env("YT_CLIENT_SECRET")
         and base.env("YT_REFRESH_TOKEN") and base.env("YT_CHANNEL_ID")
     )
+
+
+def _has_public_key() -> bool:
+    return bool(base.env("YT_API_KEY") and base.env("YT_CHANNEL_ID"))
+
+
+def is_configured() -> bool:
+    return _has_oauth() or _has_public_key()
 
 
 def _access_token() -> str:
@@ -55,6 +63,109 @@ def _access_token() -> str:
 
 
 def sync(conn: sqlite3.Connection, start: dt.date, end: dt.date) -> int:
+    """Full analytics where we have Brand Account OAuth, public data otherwise.
+
+    The YouTube Analytics API needs channel ownership or Brand Account manager
+    access. Permissions granted through YouTube Studio look identical in the UI
+    but return 403 here. Rather than leave the channel unreported, public mode
+    reads what anyone can read: per-video view, like and comment counts, and
+    the subscriber total.
+
+    What public mode cannot give: watch time, average view duration,
+    impressions, click-through rate, traffic sources, or any day-by-day split.
+    Video counts are lifetime-to-date, so a window means "videos published in
+    this window, and what they have accumulated since".
+    """
+    if not _has_oauth():
+        return _sync_public(conn, start, end)
+    return _sync_analytics(conn, start, end)
+
+
+def _sync_public(conn: sqlite3.Connection, start: dt.date, end: dt.date) -> int:
+    from .. import db
+
+    key = base.require("YT_API_KEY")
+    channel = base.require("YT_CHANNEL_ID")
+
+    channel_payload = base.get_json(
+        "https://www.googleapis.com/youtube/v3/channels",
+        params={"part": "statistics,contentDetails,snippet", "id": channel, "key": key},
+    )
+    db.store_raw(conn, "youtube_organic", "public/channels", {"id": channel}, channel_payload)
+    items = channel_payload.get("items") or []
+    if not items:
+        raise base.ConnectorError("channel %s not found or not public" % channel)
+
+    statistics = items[0].get("statistics", {})
+    uploads = (items[0].get("contentDetails", {})
+               .get("relatedPlaylists", {}).get("uploads"))
+
+    subscribers = base.as_int(statistics.get("subscriberCount"))
+    if subscribers is not None:
+        db.upsert_followers(conn, [{
+            "date": dt.date.today().isoformat(), "platform": "youtube",
+            "account_id": channel, "followers": subscribers,
+        }])
+
+    # Walk the uploads playlist, which costs one quota unit per page, rather
+    # than search.list, which costs a hundred.
+    video_ids: List[str] = []
+    page_token, pages = None, 0
+    while uploads and pages < 20:
+        params = {"part": "contentDetails", "playlistId": uploads,
+                  "maxResults": 50, "key": key}
+        if page_token:
+            params["pageToken"] = page_token
+        payload = base.get_json(
+            "https://www.googleapis.com/youtube/v3/playlistItems", params=params)
+        oldest_on_page = None
+        for item in payload.get("items", []):
+            details = item.get("contentDetails", {})
+            published = (details.get("videoPublishedAt") or "")[:10]
+            oldest_on_page = published or oldest_on_page
+            if published and start.isoformat() <= published <= end.isoformat():
+                video_ids.append(details.get("videoId"))
+        page_token = payload.get("nextPageToken")
+        pages += 1
+        # Uploads come newest first, so stop once we are past the window.
+        if not page_token or (oldest_on_page and oldest_on_page < start.isoformat()):
+            break
+
+    rows: List[Dict[str, Any]] = []
+    for chunk in [video_ids[i:i + 50] for i in range(0, len(video_ids), 50)]:
+        payload = base.get_json(
+            "https://www.googleapis.com/youtube/v3/videos",
+            params={"part": "snippet,statistics", "id": ",".join(chunk), "key": key},
+        )
+        db.store_raw(conn, "youtube_organic", "public/videos", {"count": len(chunk)}, payload)
+        for video in payload.get("items", []):
+            snippet = video.get("snippet", {})
+            stats = video.get("statistics", {})
+            likes = base.as_int(stats.get("likeCount")) or 0
+            comments = base.as_int(stats.get("commentCount")) or 0
+            rows.append({
+                "date": (snippet.get("publishedAt") or "")[:10],
+                "platform": "youtube",
+                "account_id": channel,
+                "entity_type": "post",
+                "entity_id": video.get("id"),
+                "post_caption": (snippet.get("title") or "")[:300],
+                "post_url": "https://www.youtube.com/watch?v=%s" % video.get("id"),
+                "post_type": "video",
+                "published_at": snippet.get("publishedAt"),
+                "views": base.as_int(stats.get("viewCount")),
+                "likes": likes,
+                "comments": comments,
+                "engagements": likes + comments,
+                # Named so nobody mistakes it for a within-window figure.
+                "view_definition": "lifetime views to date, not views within this period",
+                "provider": "youtube data api (public)",
+            })
+
+    return db.upsert_organic(conn, rows)
+
+
+def _sync_analytics(conn: sqlite3.Connection, start: dt.date, end: dt.date) -> int:
     from .. import db
 
     token = _access_token()

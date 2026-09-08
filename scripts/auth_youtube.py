@@ -78,6 +78,63 @@ def write_env(values, path=".env"):
     return True
 
 
+def _arg_value(flag):
+    if flag in sys.argv:
+        index = sys.argv.index(flag)
+        if index + 1 < len(sys.argv):
+            return sys.argv[index + 1].strip()
+    return ""
+
+
+def _env_value(key, path=".env"):
+    if not os.path.isfile(path):
+        return ""
+    for line in open(path):
+        if line.startswith(key + "="):
+            return line.split("=", 1)[1].strip()
+    return ""
+
+
+def _channel_title(access_token, channel_id):
+    try:
+        request = urllib.request.Request(
+            "https://www.googleapis.com/youtube/v3/channels?part=snippet&id=%s" % channel_id,
+            headers={"Authorization": "Bearer %s" % access_token},
+        )
+        with urllib.request.urlopen(request) as response:
+            items = json.load(response).get("items") or []
+        return items[0]["snippet"]["title"] if items else ""
+    except Exception:
+        return ""
+
+
+def _can_read_analytics(access_token, channel_id):
+    """One real Analytics query. Permission problems surface here, not later."""
+    query = urllib.parse.urlencode({
+        "ids": "channel==%s" % channel_id,
+        "startDate": "2026-01-01",
+        "endDate": "2026-01-07",
+        "metrics": "views",
+    })
+    try:
+        request = urllib.request.Request(
+            "https://youtubeanalytics.googleapis.com/v2/reports?" + query,
+            headers={"Authorization": "Bearer %s" % access_token},
+        )
+        with urllib.request.urlopen(request) as response:
+            json.load(response)
+        return True, ""
+    except urllib.error.HTTPError as exc:
+        try:
+            body = json.load(exc)
+            message = body.get("error", {}).get("message", "")
+        except Exception:
+            message = exc.reason
+        return False, "HTTP %s %s" % (exc.code, message)
+    except Exception as exc:
+        return False, str(exc)
+
+
 def _client_name_from_env(path=".env"):
     """The client name the dashboard is configured for, used as a sanity check."""
     for source in (path, ".env.example"):
@@ -208,43 +265,43 @@ def main():
         print("myaccount.google.com/permissions and run this again.")
         return 1
 
-    channel_id = ""
-    channel_title = ""
-    try:
-        channel_request = urllib.request.Request(
-            "https://www.googleapis.com/youtube/v3/channels?part=id,snippet&mine=true",
-            headers={"Authorization": "Bearer %s" % payload["access_token"]},
-        )
-        with urllib.request.urlopen(channel_request) as response:
-            items = json.load(response).get("items") or []
-        if items:
-            channel_id = items[0]["id"]
-            channel_title = items[0]["snippet"]["title"]
-            print("\nSigned in to channel: %s" % channel_title)
-    except Exception:
-        pass
+    # Which channel are we actually after? A Studio-permissions manager is not
+    # a selectable OAuth identity, so `mine=true` returns the operator's own
+    # channel no matter which channel they manage. Ask explicitly instead.
+    target = _arg_value("--channel") or os.environ.get("YT_CHANNEL_ID", "").strip() \
+        or _env_value("YT_CHANNEL_ID")
 
-    # Google returns whichever channel the chosen account IS, not the ones it
-    # manages. Picking the personal account at the chooser silently authorises
-    # the wrong channel, and the dashboard would then report the agency's own
-    # numbers under the client's name. Check rather than trust the operator to
-    # notice one line of output.
-    expected = os.environ.get("CLIENT_NAME", "").strip() or _client_name_from_env()
-    if expected and channel_title:
-        words = [w for w in expected.lower().split() if len(w) > 2]
-        if not any(w in channel_title.lower() for w in words):
-            print("\n" + "!" * 60)
-            print("STOP. That channel does not look like %r." % expected)
-            print("You authorised: %s" % channel_title)
-            print("")
-            print("At the Google account chooser you have to pick the CHANNEL,")
-            print("not just the account. If the client's channel is a Brand")
-            print("Account you manage, it appears as a second choice after you")
-            print("pick your login.")
-            print("")
-            print("Nothing was saved. Re-run and choose the client's channel.")
-            print("!" * 60 + "\n")
-            return 2
+    if not target:
+        print("\nWhich channel should this read?")
+        print("YouTube Studio > Settings > Channel > Advanced settings > Channel ID")
+        target = input("Paste the channel ID (starts UC): ").strip()
+    if not target:
+        print("No channel ID given. Nothing saved.")
+        return 1
+
+    access = payload["access_token"]
+    title = _channel_title(access, target)
+    print("\nChannel %s -> %s" % (target, title or "(title unavailable)"))
+
+    # Prove the token can actually read this channel's analytics. Studio
+    # permissions do not always carry through to the API, and finding that out
+    # now beats finding it out during the first client sync.
+    ok, detail = _can_read_analytics(access, target)
+    if not ok:
+        print("\n" + "!" * 62)
+        print("Authorised, but this account cannot read that channel's analytics.")
+        print("API said: %s" % detail)
+        print("")
+        print("YouTube Studio permissions do not always grant API access. To fix,")
+        print("ask the channel owner to add you as a manager on the BRAND ACCOUNT")
+        print("(Google Account > Settings > Brand Accounts), which is a different")
+        print("grant from Studio > Settings > Permissions.")
+        print("Nothing was saved.")
+        print("!" * 62 + "\n")
+        return 2
+
+    print("Analytics read: OK")
+    channel_id = target
 
     values = {
         "YT_CLIENT_ID": client_id,
