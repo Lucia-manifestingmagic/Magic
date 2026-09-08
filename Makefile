@@ -28,6 +28,10 @@ test: install
 auth-youtube:
 	python3 scripts/auth_youtube.py $(JSON)
 
+## Verify a Meta System User token and discover the Page/IG/ad account IDs
+auth-meta:
+	python3 scripts/auth_meta.py
+
 ## Incremental sync of the last 28 days from the live APIs
 sync: install
 	$(PY) -m app.sync --days 28

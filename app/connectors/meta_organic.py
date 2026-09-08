@@ -32,8 +32,16 @@ IG_MEDIA_METRICS = ["reach", "likes", "comments", "shares", "saved", "total_inte
 IG_ACCOUNT_METRICS = ["reach", "profile_views", "website_clicks", "accounts_engaged"]
 
 
+def _token() -> str:
+    """Prefer the Page token: it does not expire, unlike the 60-day user token."""
+    return base.env("META_PAGE_TOKEN") or base.require("META_ACCESS_TOKEN")
+
+
 def is_configured() -> bool:
-    return bool(base.env("META_ACCESS_TOKEN") and base.env("IG_USER_ID"))
+    return bool(
+        (base.env("META_PAGE_TOKEN") or base.env("META_ACCESS_TOKEN"))
+        and base.env("IG_USER_ID")
+    )
 
 
 def _api() -> str:
@@ -43,7 +51,7 @@ def _api() -> str:
 def sync(conn: sqlite3.Connection, start: dt.date, end: dt.date) -> int:
     from .. import db
 
-    token = base.require("META_ACCESS_TOKEN")
+    token = _token()
     ig_user = base.require("IG_USER_ID")
 
     rows: List[Dict[str, Any]] = []
