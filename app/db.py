@@ -496,6 +496,24 @@ def fetch_rows(
     return list(conn.execute(sql, params))
 
 
+def earliest_date(conn: sqlite3.Connection) -> Optional[dt.date]:
+    """First date with any stored row, so "All time" means what it says."""
+    candidates = []
+    for table in ("daily_metrics", "organic_daily", "bio_link_daily"):
+        row = conn.execute("SELECT MIN(date) FROM %s" % table).fetchone()
+        if row and row[0]:
+            candidates.append(row[0])
+    return dt.date.fromisoformat(min(candidates)) if candidates else None
+
+
+def last_delivery(conn: sqlite3.Connection, channel: str) -> Optional[dt.date]:
+    """Most recent day this channel actually spent money."""
+    row = conn.execute(
+        "SELECT MAX(date) FROM daily_metrics WHERE channel = ? AND spend > 0", (channel,)
+    ).fetchone()
+    return dt.date.fromisoformat(row[0]) if row and row[0] else None
+
+
 def fetch_reach(
     conn: sqlite3.Connection,
     channel: str,

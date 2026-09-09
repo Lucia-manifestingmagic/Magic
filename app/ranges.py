@@ -37,6 +37,8 @@ RANGES: Dict[str, str] = {
     "28d": "Last 28 days",
     "90d": "Last 90 days",
     "mtd": "Month to date",
+    "12m": "Last 12 months",
+    "all": "All time",
 }
 
 DEFAULT_RANGE = "28d"
@@ -46,12 +48,23 @@ def last_complete_day(today: dt.date) -> dt.date:
     return today - dt.timedelta(days=1)
 
 
-def resolve(key: str, today: dt.date) -> Window:
+def resolve(key: str, today: dt.date, earliest: dt.date = None) -> Window:
+    """Resolve a range key to a window ending on the last complete day.
+
+    `earliest` is the first date with any stored data; "All time" starts there
+    rather than at an arbitrary constant, so the label matches what is actually
+    on screen.
+    """
     if key not in RANGES:
         key = DEFAULT_RANGE
     end = last_complete_day(today)
+
     if key == "mtd":
         start = dt.date(end.year, end.month, 1)
+    elif key == "12m":
+        start = end - dt.timedelta(days=364)
+    elif key == "all":
+        start = earliest or dt.date(2015, 1, 1)
     else:
         length = int(key.rstrip("d"))
         start = end - dt.timedelta(days=length - 1)

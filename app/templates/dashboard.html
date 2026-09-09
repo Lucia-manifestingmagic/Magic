@@ -104,15 +104,26 @@
   <div class="hero-row">
     <div class="hero">
       <p class="hero-label">
+        {% if v.blended.metrics.cac.value is none %}
+        Return on ad spend
+        {{ tip('Revenue attributed by the platform, divided by spend. Leading with this because cost per new account is not measurable yet: the platform reports purchases, and most wholesale purchases are repeat orders from existing customers.') }}
+        {% else %}
         {{ 'Blended cost per new account' if v.channels | length > 1 else 'Cost per new account' }}
-        {{ tip('Total paid spend divided by the number of new accounts it produced in this period. Computed from period totals, not by averaging the daily figures.') }}
+        {{ tip('Total paid spend divided by the number of new accounts it produced in this period.') }}
+        {% endif %}
       </p>
-      {% if v.any_paid_connected %}
-      <p class="hero-figure hero-{{ v.blended.verdict.state }}">{{ m(v.blended.metrics.cac, 'money') }}</p>
-      {% else %}
+      {% if not v.any_paid_connected %}
       <p class="hero-figure hero-unknown">Not connected</p>
+      {% elif v.blended.metrics.cac.value is none %}
+      <p class="hero-figure hero-{{ v.blended.verdict.state }}">{{ m(v.blended.metrics.roas, 'ratio1') }}</p>
+      {% else %}
+      <p class="hero-figure hero-{{ v.blended.verdict.state }}">{{ m(v.blended.metrics.cac, 'money') }}</p>
       {% endif %}
       <p class="hero-context">
+        {% if v.blended.metrics.cac.value is none %}
+        Break-even is <strong>{{ v.benchmarks.breakeven_roas | round(1) }}x</strong> at the planned budget.
+        Cost per new account is not shown because it is not measurable yet.
+        {% else %}
         Your cold-sales benchmark is <strong>{{ v.benchmarks.cac | money }}</strong> per account.
         {% if v.blended.metrics.cac.value is not none %}
           {% set gap = v.benchmarks.cac - v.blended.metrics.cac.value %}
@@ -122,12 +133,13 @@
             Paid media is <strong>{{ (-gap) | money }} more expensive</strong> per account.
           {% endif %}
         {% endif %}
+        {% endif %}
       </p>
       <dl class="hero-support">
         <div><dt>Spend</dt><dd>{{ m(v.blended.metrics.spend, 'money') }}</dd></div>
-        <div><dt>New accounts</dt><dd>{{ m(v.blended.metrics.conversions, 'num') }}</dd></div>
-        <div><dt>Payback {{ tip('How many months of gross profit it takes for one acquired account to repay what it cost to acquire, at $' ~ v.benchmarks.account_monthly_gp | int ~ ' gross profit per account per month.') }}</dt>
-             <dd>{{ m(v.blended.metrics.payback_months, 'num1') }} mo</dd></div>
+        <div><dt>Purchases {{ tip('Purchase events reported by the platform. Not the same as new accounts: most wholesale purchases are repeat orders from existing locksmiths.') }}</dt>
+             <dd>{{ m(v.blended.metrics.conversions, 'num') }}</dd></div>
+        <div><dt>Revenue</dt><dd>{{ m(v.blended.metrics.revenue, 'money') }}</dd></div>
       </dl>
     </div>
 
@@ -155,11 +167,29 @@
         <p class="verdict-reco">{{ ch.verdict.recommendation }}</p>
         {% endif %}
 
+        {% if ch.connected and ch.historical_only %}
+        <p class="flag flag-historical">
+          {{ state_icon('unknown') }}
+          <span><strong>Historical, not current.</strong>
+          Last delivery was {{ ch.last_delivery_pretty }}, {{ ch.days_since_delivery }} days ago.
+          {% if ch.has_data_in_window %}These figures describe a campaign that is no longer
+          running.{% else %}Nothing ran in this period; widen the range to see past
+          performance.{% endif %}</span>
+        </p>
+        {% endif %}
+
+        {% if ch.connected %}
+        <p class="cac-unavailable">
+          Cost per new account:
+          <span class="unknown" tabindex="0" role="button" data-tip="{{ ch.metrics.cac.reason | e }}">Unavailable</span>
+        </p>
+        {% endif %}
+
         {% if ch.connected %}
         <dl class="mini-stats">
           <div>
-            <dt>Cost per account</dt>
-            <dd>{{ m(ch.metrics.cac, 'money') }}</dd>
+            <dt>Cost per purchase {{ tip('Spend divided by purchase events. A purchase is not a new account.') }}</dt>
+            <dd>{{ m(ch.metrics.cpa, 'money2') }}</dd>
             <dd class="delta-cell">{{ delta(ch.deltas.cac, 'down') }}</dd>
           </div>
           <div>
@@ -168,7 +198,7 @@
             <dd class="delta-cell">{{ delta(ch.deltas.spend, 'neutral') }}</dd>
           </div>
           <div>
-            <dt>New accounts</dt>
+            <dt>Purchases</dt>
             <dd>{{ m(ch.metrics.conversions, 'num') }}</dd>
             <dd class="delta-cell">{{ delta(ch.deltas.conversions, 'up') }}</dd>
           </div>
@@ -284,9 +314,10 @@
       <tbody>
         {% set rows = [
           ('Spend', 'spend', 'money'),
-          ('New accounts', 'conversions', 'num'),
-          ('Cost per account', 'cac', 'money'),
-          ('Revenue (first order)', 'revenue', 'money'),
+          ('Purchases', 'conversions', 'num'),
+          ('Cost per purchase', 'cpa', 'money2'),
+          ('Cost per new account', 'cac', 'money'),
+          ('Revenue attributed', 'revenue', 'money'),
           ('ROAS', 'roas', 'ratio'),
           ('Profit-adjusted ROAS', 'profit_roas', 'ratio'),
           ('Average order value', 'aov', 'money'),
@@ -294,7 +325,7 @@
           ('Click-through rate', 'ctr', 'pct2'),
           ('Cost per click', 'cpc', 'money2'),
           ('CPM', 'cpm', 'money2'),
-          ('Conversion rate', 'cvr', 'pct2'),
+          ('Purchase rate', 'cvr', 'pct2'),
           ('Frequency', 'frequency', 'num1'),
           ('Thumbstop rate', 'thumbstop', 'pct'),
           ('Cost per view', 'cpv', 'money2'),
@@ -312,7 +343,7 @@
           'thumbstop': 'Share of impressions where someone stopped scrolling for at least 3 seconds. Meta only.',
           'view_rate': 'Share of impressions that became a counted YouTube view. YouTube counts a view at 30 seconds or full play, so it is not comparable to a Meta 3-second view.',
           'ltv_to_cac': 'Lifetime gross profit per account (' ~ v.benchmarks.account_ltv_gp | money ~ ') divided by what it cost to acquire one.',
-          'cvr': 'New accounts divided by link clicks where the channel reports them, otherwise all clicks.'
+          'cvr': 'Purchases divided by link clicks where the channel reports them, otherwise all clicks. Purchases, not new accounts.'
         } %}
         {% for label, key, kind in rows %}
         <tr>
@@ -471,8 +502,8 @@
         <tr>
           <th scope="col" data-sort="text">Campaign</th>
           <th scope="col" class="num" data-sort="number">Spend</th>
-          <th scope="col" class="num" data-sort="number">Accounts</th>
-          <th scope="col" class="num" data-sort="number" aria-sort="ascending">Cost per account</th>
+          <th scope="col" class="num" data-sort="number">Purchases</th>
+          <th scope="col" class="num" data-sort="number" aria-sort="ascending">Cost per purchase</th>
           <th scope="col" class="num" data-sort="number">ROAS</th>
           <th scope="col" class="num" data-sort="number">CTR</th>
           <th scope="col">Spend trend</th>
@@ -488,8 +519,7 @@
           <td class="num" data-value="{{ c.spend }}">{{ c.spend | money }}</td>
           <td class="num" data-value="{{ c.conversions }}">{{ c.conversions | number }}</td>
           <td class="num" data-value="{{ c.cac if c.cac is not none else 1e12 }}">
-            {% if c.cac is not none and c.cac <= v.benchmarks.cac %}<span class="under-benchmark">{{ m(c.metrics.cac, 'money') }}</span>
-            {% else %}{{ m(c.metrics.cac, 'money') }}{% endif %}
+{{ m(c.metrics.cpa, 'money2') }}
           </td>
           <td class="num" data-value="{{ c.roas if c.roas is not none else -1 }}">{{ m(c.metrics.roas, 'ratio1') }}</td>
           <td class="num" data-value="{{ c.metrics.ctr.value if c.metrics.ctr.value is not none else -1 }}">{{ m(c.metrics.ctr, 'pct2') }}</td>
@@ -499,7 +529,7 @@
       </tbody>
     </table>
   </div>
-  <p class="foot-note">Cost per account is shown in green where it beats the {{ v.benchmarks.cac | money }} benchmark.</p>
+  <p class="foot-note">Cost per purchase is spend divided by purchase events. It is not a cost per new account, and is not comparable to the {{ v.benchmarks.cac | money }} cold-sales benchmark.</p>
 </section>
 
 <!-- 6 ─────────────────────────────────────── creative leaderboard ───────── -->
@@ -513,7 +543,7 @@
   </div>
 
   <div class="leaderboards">
-    {% for group, heading, blurb in [('best', 'Working', 'Lowest cost per account.'), ('worst', 'Not working', 'Highest cost per account, or spending with nothing to show.')] %}
+    {% for group, heading, blurb in [('best', 'Working', 'Lowest cost per purchase.'), ('worst', 'Not working', 'Highest cost per purchase, or spending with nothing to show.')] %}
     <div class="card">
       <h3>{{ heading }}</h3>
       <p class="chart-note">{{ blurb }}</p>
@@ -529,9 +559,9 @@
             <p class="creative-name"><span class="swatch swatch-{{ ad.channel }}" aria-hidden="true"></span>{{ ad.name }}</p>
             <p class="creative-campaign">{{ ad.campaign_name }}</p>
             <dl class="creative-stats">
-              <div><dt>Cost/account</dt><dd>{{ m(ad.metrics.cac, 'money') }}</dd></div>
+              <div><dt>Cost/purchase</dt><dd>{{ m(ad.metrics.cpa, 'money2') }}</dd></div>
               <div><dt>Spend</dt><dd>{{ ad.spend | money }}</dd></div>
-              <div><dt>Accounts</dt><dd>{{ ad.conversions | number }}</dd></div>
+              <div><dt>Purchases</dt><dd>{{ ad.conversions | number }}</dd></div>
               <div><dt>ROAS</dt><dd>{{ m(ad.metrics.roas, 'ratio1') }}</dd></div>
             </dl>
           </div>

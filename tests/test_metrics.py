@@ -44,21 +44,40 @@ def row(**overrides):
 # --- CAC -------------------------------------------------------------------
 
 
-def test_cac_is_spend_over_conversions():
+def test_cpa_is_spend_over_conversions():
     totals = metrics.sum_rows([row(spend=4120.0, conversions=10.0)])
-    assert metrics.derive(totals)["cac"].value == pytest.approx(412.0)
+    assert metrics.derive(totals)["cpa"].value == pytest.approx(412.0)
 
 
-def test_cac_is_none_with_a_reason_when_there_are_no_conversions():
-    totals = metrics.sum_rows([row(spend=900.0, conversions=0.0)])
+def test_cac_is_unavailable_while_conversions_are_only_purchases():
+    """The headline guard: a purchase is not a new account.
+
+    Most wholesale purchases are repeat orders from existing customers, so
+    spend/purchases is not a cost of acquisition and must not be presented as
+    one beside a $550 cold-sales benchmark.
+    """
+    totals = metrics.sum_rows([row(spend=4120.0, conversions=10.0)])
     cac = metrics.derive(totals)["cac"]
     assert cac.value is None
-    assert "No accounts acquired" in cac.reason
+    assert "not a cost per new account" in cac.reason
 
 
-def test_cac_never_returns_infinity_or_nan():
+def test_cac_is_computed_once_the_event_is_verified():
+    totals = metrics.sum_rows([row(spend=4120.0, conversions=10.0)])
+    cac = metrics.derive(totals, conversion_source="verified_account")["cac"]
+    assert cac.value == pytest.approx(412.0)
+
+
+def test_cpa_is_none_with_a_reason_when_there_are_no_conversions():
+    totals = metrics.sum_rows([row(spend=900.0, conversions=0.0)])
+    cpa = metrics.derive(totals)["cpa"]
+    assert cpa.value is None
+    assert "No purchases" in cpa.reason
+
+
+def test_cpa_never_returns_infinity_or_nan():
     for spend, conversions in ((0.0, 0.0), (500.0, 0.0), (0.0, 3.0)):
-        value = metrics.derive(metrics.sum_rows([row(spend=spend, conversions=conversions)]))["cac"].value
+        value = metrics.derive(metrics.sum_rows([row(spend=spend, conversions=conversions)]))["cpa"].value
         assert value is None or (value == value and value not in (float("inf"), float("-inf")))
 
 
@@ -72,7 +91,7 @@ def test_cac_over_a_period_is_weighted_not_averaged():
     average of $100 and $450 is $275.
     """
     rows = [row(spend=100.0, conversions=1.0), row(spend=900.0, conversions=2.0)]
-    period_cac = metrics.derive(metrics.sum_rows(rows))["cac"].value
+    period_cac = metrics.derive(metrics.sum_rows(rows))["cpa"].value
     naive_average = (100.0 / 1.0 + 900.0 / 2.0) / 2
     assert period_cac == pytest.approx(1000.0 / 3.0)
     assert period_cac != pytest.approx(naive_average)
@@ -135,10 +154,10 @@ def test_rolling_totals_sums_inputs_then_divides():
     rolled = metrics.rolling_totals(days, 7)
     last_window = rolled[-1][1]
     assert last_window.spend == pytest.approx(700.0)
-    assert metrics.derive(last_window)["cac"].value == pytest.approx(700.0)
+    assert metrics.derive(last_window)["cpa"].value == pytest.approx(700.0)
     # Six of the seven days had no conversions at all; a mean of daily CACs
     # would have been undefined for six of them.
-    assert metrics.derive(days[0][1])["cac"].value is None
+    assert metrics.derive(days[0][1])["cpa"].value is None
 
 
 def test_daily_series_fills_gaps_as_empty_days():
@@ -220,11 +239,22 @@ def test_meta_actions_are_summed_only_for_the_chosen_action_type():
 # --- verdict ---------------------------------------------------------------
 
 
-def _verdict_for(spend, conversions, revenue=0.0):
+def _verdict_for(spend, conversions, revenue=0.0, source="verified_account"):
     totals = metrics.sum_rows(
         [row(spend=spend, conversions=conversions, conversion_value=revenue)]
     )
-    return metrics.verdict("Meta", metrics.derive(totals), breakeven=6.3)
+    return metrics.verdict(
+        "Meta", metrics.derive(totals, conversion_source=source),
+        breakeven=6.3, conversion_source=source,
+    )
+
+
+def test_verdict_leads_with_roas_when_cac_is_not_measurable():
+    """Without a verified account event, judge on return, not on a fake CAC."""
+    result = _verdict_for(1000.0, 200.0, revenue=29000.0, source="purchase_proxy")
+    assert "on ad spend" in result.headline
+    assert result.state == metrics.STATE_GOOD
+    assert "not a cost per new account" in result.detail
 
 
 def test_verdict_recommends_scaling_below_the_target():
@@ -385,10 +415,10 @@ def test_blended_excludes_channels_that_are_switched_off():
     ])
     day = dt.date(2026, 9, 1)
 
-    both = metrics.derive(metrics.sum_rows(db.fetch_rows(conn, day, day)))["cac"].value
+    both = metrics.derive(metrics.sum_rows(db.fetch_rows(conn, day, day)))["cpa"].value
     meta_only = metrics.derive(
         metrics.sum_rows(db.fetch_rows(conn, day, day, channels=["meta"]))
-    )["cac"].value
+    )["cpa"].value
 
     assert both == pytest.approx(6000.0 / 5.0)     # 1200
     assert meta_only == pytest.approx(1000.0 / 4.0)  # 250

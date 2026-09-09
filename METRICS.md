@@ -61,7 +61,8 @@ Deltas compare against the equal-length window immediately before.
 |---|---|---|
 | Spend | `Σ spend` | Meta: `spend`. Google: `cost_micros ÷ 1,000,000`. |
 | New accounts | `Σ conversions` | See *Conversions* below — currently proxied. |
-| **Cost per new account (CAC)** | `Σ spend ÷ Σ conversions` | The headline. Judged against the **$550** cold-sales benchmark. `—` when there are no conversions. |
+| **Cost per purchase (CPA)** | `Σ spend ÷ Σ purchases` | Real, and computable from what the platform reports. |
+| **Cost per new account (CAC)** | *unavailable* | See below. |
 | Revenue | `Σ conversion_value` | First-order revenue attributed by the platform. |
 | **ROAS** | `Σ revenue ÷ Σ spend` | Plotted against the break-even reference line. |
 | **Profit-adjusted ROAS** | `(Σ revenue × 0.40) ÷ Σ spend` | Return on gross profit — what the business actually keeps. |
@@ -71,6 +72,48 @@ Deltas compare against the equal-length window immediately before.
 | CTR | `Σ clicks ÷ Σ impressions` | |
 | Conversion rate | `Σ conversions ÷ Σ link_clicks` | Falls back to all clicks where the channel does not report link clicks. |
 | Cost per landing page view | `Σ spend ÷ Σ landing_page_views` | Meta only; `—` on YouTube. |
+
+## Why cost per new account reads "Unavailable"
+
+A purchase is not a new account. Noble Key Supply sells wholesale to
+locksmiths, so most purchase events are **repeat orders from existing
+customers**. Dividing spend by purchases answers a question nobody asked.
+
+The size of the error is not subtle. Over Dec 2024 – Sep 2025 the account
+spent $13,329 against 3,105 purchases, which is **$4.29 per purchase**. Placed
+beside the $550 cold-sales benchmark that reads as 128× better than human
+sales, and anyone acting on it would be acting on a measurement artefact.
+
+So `cac` is only computed where `conversion_source = 'verified_account'`.
+Everywhere else it resolves to `None` with that explanation attached, and the
+dashboard prints **Unavailable** rather than a number. `cpa` carries the real,
+defensible figure in the meantime.
+
+**To make it available:** feed rows with `conversion_source='verified_account'`
+and `conversions` set to first-orders-from-new-accounts, from Shopify. Nothing
+else in the metrics layer changes.
+
+## When there is no CAC, the verdict leads with ROAS
+
+ROAS is measured from platform-reported revenue and stands on its own, so a
+channel without a verified account event is judged against the modelled
+break-even instead of against the $550 benchmark:
+
+| Condition | State |
+|---|---|
+| ROAS ≥ 1.5 × break-even | good, increase budget |
+| ROAS ≥ break-even | good, hold or increase |
+| ROAS ≥ 0.85 × break-even | warning, hold and tighten |
+| below that | critical, cut |
+
+## Historical versus current
+
+A channel that stopped running is not a channel performing badly. Every paid
+channel carries its **last delivery date**, and where that is more than 30 days
+old the card is marked *Historical, not current* with the date and the gap. The
+"All time" and "Last 12 months" ranges exist so past campaigns can be read at
+all: with delivery having ended 8 Sep 2025, none of the 7/28/90-day windows
+reach the data.
 
 ## Benchmarks and reference lines
 

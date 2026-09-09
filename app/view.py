@@ -111,6 +111,12 @@ def _channel_block(
     frequency = derived["frequency"].value
     connected = _connection_status().get(channel or "meta", {}).get("configured", False)
 
+    # Historical is not the same as current. A channel that stopped a year ago
+    # must not have its old numbers read as this month's performance.
+    delivered = db.last_delivery(conn, channel) if channel else None
+    stale_days = (window.end - delivered).days if delivered else None
+    in_window = bool(delivered and window.start <= delivered <= window.end)
+
     return {
         "key": channel or "blended",
         "label": label,
@@ -128,6 +134,12 @@ def _channel_block(
         "series": _series_points(current, window),
         "row_count": totals.row_count,
         "connected": connected,
+        "last_delivery": delivered.isoformat() if delivered else None,
+        "last_delivery_pretty": delivered.strftime("%-d %b %Y") if delivered else None,
+        "days_since_delivery": stale_days,
+        "delivering_now": bool(in_window and stale_days is not None and stale_days <= 3),
+        "historical_only": bool(delivered and stale_days is not None and stale_days > 30),
+        "has_data_in_window": totals.row_count > 0,
     }
 
 
@@ -340,7 +352,7 @@ def build(
     conn: sqlite3.Connection, range_key: str = ranges.DEFAULT_RANGE, today: Optional[dt.date] = None
 ) -> Dict[str, Any]:
     today = today or dt.date.today()
-    window = ranges.resolve(range_key, today)
+    window = ranges.resolve(range_key, today, earliest=db.earliest_date(conn))
     prior = window.previous()
 
     # Only channels the client is actually running. A channel switched off in

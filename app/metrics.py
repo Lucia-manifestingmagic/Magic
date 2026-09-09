@@ -182,15 +182,33 @@ def derive(
         None if conversion_value is not None else "No revenue reported for this channel.",
     )
 
-    out["cac"] = _div(
+    # Cost per *purchase*: real, and computable from what the platform reports.
+    out["cpa"] = _div(
         spend,
         conversions,
-        zero_reason=(
-            "No accounts acquired in this period, so cost per account cannot be "
-            "calculated. Spend to date is shown instead."
-        ),
+        zero_reason="No purchases recorded in this period.",
         missing_reason="This channel reports no conversion data.",
     )
+
+    # Cost per *new account* is a different number and we cannot yet measure it.
+    # A wholesale purchase is usually a repeat order from an existing locksmith,
+    # so dividing spend by purchases answers a question nobody asked and reads
+    # ~100x better than the $550 cold-sales benchmark it would be compared to.
+    # It stays unavailable until a verified new-account event is connected.
+    if conversion_source == "verified_account":
+        out["cac"] = _div(
+            spend,
+            conversions,
+            zero_reason="No new accounts acquired in this period.",
+            missing_reason="This channel reports no conversion data.",
+        )
+    else:
+        out["cac"] = Metric(None, (
+            "Not measurable yet. The platform reports purchases, and most "
+            "wholesale purchases are repeat orders from existing locksmiths, so "
+            "spend divided by purchases is not a cost per new account. Needs a "
+            "verified new-account event from Shopify."
+        ))
 
     out["roas"] = _div(
         conversion_value,
@@ -688,13 +706,35 @@ def verdict(
                 " is coming from repeat orders rather than the first sale." % (roas, breakeven)
             )
 
-    if cac is None:  # defensive; conversions > 0 means cac is computable
-        return Verdict(
-            STATE_UNKNOWN,
-            "%s cost per account is unavailable." % label,
-            metrics["cac"].reason or "",
-            "No recommendation until the number is available.",
-        )
+    if cac is None:
+        # No verified new-account event, so judge on return instead. ROAS is
+        # measured from real platform revenue and stands on its own.
+        if roas is None or breakeven is None:
+            return Verdict(
+                STATE_UNKNOWN,
+                "%s has no return figure for this period." % label,
+                metrics["roas"].reason or metrics["cac"].reason or "",
+                "Connect a revenue signal before judging this channel.",
+            )
+        cpa = metrics.get("cpa", Metric(None)).value
+        detail = "Break-even is %.1fx at the current budget." % breakeven
+        if cpa is not None:
+            detail += " Cost per purchase is %s, which is not a cost per new account." % _money(cpa)
+        if roas >= breakeven * 1.5:
+            return Verdict(STATE_GOOD,
+                "%s returned %.1fx on ad spend." % (label, roas),
+                detail, "Well above break-even. Recommend increasing budget.")
+        if roas >= breakeven:
+            return Verdict(STATE_GOOD,
+                "%s returned %.1fx on ad spend." % (label, roas),
+                detail, "Above break-even. Recommend holding or increasing budget.")
+        if roas >= breakeven * 0.85:
+            return Verdict(STATE_WARNING,
+                "%s returned %.1fx on ad spend." % (label, roas),
+                detail, "Just below break-even. Hold budget and tighten targeting.")
+        return Verdict(STATE_CRITICAL,
+            "%s returned %.1fx on ad spend." % (label, roas),
+            detail, "Below break-even. Recommend cutting budget here.")
 
     if cac <= C.CAC_TARGET:
         return Verdict(
