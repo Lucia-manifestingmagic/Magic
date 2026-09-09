@@ -38,6 +38,7 @@ NEEDED = {
     "instagram_manage_insights": "Instagram reach, views, saves (optional)",
     "pages_read_engagement": "Facebook Page insights",
     "pages_show_list": "listing the Pages this token can see",
+    "read_insights": "Facebook Page insights",
 }
 
 
@@ -127,9 +128,13 @@ REDIRECT = "http://localhost:%d/" % PORT
 # Portfolio. Without it /me/accounts only returns Pages where the user has a
 # classic Page role, and /me/adaccounts only their personally owned accounts,
 # which is how a portfolio-assigned Page comes back as "none".
+# read_insights is what the Page /insights edge needs, but requesting it on a
+# non-Business app makes the OAuth dialog fail outright with "This content
+# isn't available at the moment", taking the working scopes with it. Moved to
+# optional until the app type is fixed.
 BASE_SCOPES = ["ads_read", "business_management", "instagram_basic",
                "pages_read_engagement", "pages_show_list"]
-OPTIONAL_SCOPES = ["instagram_manage_insights"]
+OPTIONAL_SCOPES = ["instagram_manage_insights", "read_insights"]
 
 
 def _scopes():

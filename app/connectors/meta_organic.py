@@ -184,7 +184,12 @@ def _facebook_page(conn, page_id: str, token: str, start: dt.date, end: dt.date)
         "%s/%s/insights" % (_api(), page_id),
         {"period": "day", "since": start.isoformat(), "until": end.isoformat(),
          "access_token": token},
-        ["page_impressions_unique", "page_post_engagements", "page_views_total"],
+        # page_impressions and page_impressions_unique were removed in v19+.
+        # Asking for a retired metric fails the whole call with "must be a valid
+        # insights metric", taking the valid ones down with it, so this list is
+        # only metrics confirmed to exist on v21.
+        ["page_post_engagements", "page_views_total", "page_daily_follows",
+         "page_follows", "page_total_actions"],
     )
     if not payload:
         return []
@@ -200,9 +205,10 @@ def _facebook_page(conn, page_id: str, token: str, start: dt.date, end: dt.date)
     return [{
         "date": day, "platform": "facebook", "account_id": page_id,
         "entity_type": "account", "entity_id": page_id,
-        "reach": values.get("page_impressions_unique"),
+        "reach": None,   # no reach metric survives on v21 for Pages
         "engagements": values.get("page_post_engagements"),
         "profile_views": values.get("page_views_total"),
+        "follows": values.get("page_daily_follows"),
         "view_definition": "1 second or more",
         "provider": "facebook graph api",
     } for day, values in by_day.items()]
