@@ -36,6 +36,10 @@ auth-meta-app:
 auth-meta:
 	python3 scripts/auth_meta.py
 
+## Install the every-6-hours sync into your crontab
+schedule: install
+	./scripts/schedule_sync.sh install
+
 ## Incremental sync of the last 28 days from the live APIs
 sync: install
 	$(PY) -m app.sync --days 28
