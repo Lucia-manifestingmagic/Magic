@@ -306,6 +306,7 @@ def main():
         for edge in ("owned_pages", "client_pages"):
             extra, edge_error = call("%s/%s" % (business["id"], edge), token, {"fields": fields})
             if edge_error:
+                print("    %s: %s" % (edge, edge_error))
                 continue
             for page in (extra or {}).get("data", []):
                 if page.get("id") not in seen:
@@ -342,10 +343,14 @@ def main():
     ad_list = list((accounts or {}).get("data", []) if not error else [])
     seen_ads = {a.get("id") for a in ad_list}
     for business in (businesses or {}).get("data", []) if businesses else []:
+        # client_ad_accounts holds assets a partner has shared with this
+        # portfolio. Those never appear under /me/adaccounts, which is how a
+        # perfectly accessible client account reads as "none found".
         for edge in ("owned_ad_accounts", "client_ad_accounts"):
             extra, edge_error = call("%s/%s" % (business["id"], edge), token,
                                      {"fields": "id,name,account_status"})
             if edge_error:
+                print("    %s: %s" % (edge, edge_error))
                 continue
             for account in (extra or {}).get("data", []):
                 if account.get("id") not in seen_ads:

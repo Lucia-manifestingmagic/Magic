@@ -44,7 +44,24 @@ def _windows() -> List[str]:
     return [w.strip() for w in raw.split(",") if w.strip()]
 
 
+CHUNK_DAYS = 30
+
+
 def sync(conn: sqlite3.Connection, start: dt.date, end: dt.date) -> int:
+    """Ad-level daily rows, fetched in chunks.
+
+    Meta rejects long ranges at ad level with "Please reduce the amount of data
+    you're asking for" - an HTTP 500 rather than a 400, so it looks like a
+    server fault. Thirty-day windows stay comfortably under the limit and a
+    long backfill simply takes more requests.
+    """
+    total = 0
+    for window_start, window_end in base.date_chunks(start, end, CHUNK_DAYS):
+        total += _sync_window(conn, window_start, window_end)
+    return total
+
+
+def _sync_window(conn: sqlite3.Connection, start: dt.date, end: dt.date) -> int:
     token = base.require("META_ACCESS_TOKEN")
     account = base.require("META_AD_ACCOUNT_ID")
     conversion_action = base.env(
