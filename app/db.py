@@ -431,21 +431,40 @@ def fetch_organic(
 
 def fetch_follower_change(
     conn: sqlite3.Connection, platform: str, start: dt.date, end: dt.date
-) -> Optional[Dict[str, int]]:
-    """First and last follower snapshot in the window.
+) -> Optional[Dict[str, Any]]:
+    """Current follower count, plus the change over the window where known.
 
-    Net change only. Followers are a level, so the difference between two
-    snapshots is the only honest number; a sum would be nonsense.
+    The count is reported whether or not a change can be computed. Snapshots are
+    taken on the day the sync runs, and every analysis window ends on the last
+    *complete* day, so a fresh snapshot always falls outside the window it was
+    taken during. Requiring two in-window points meant the count never appeared
+    at all.
+
+    Change still needs two points, and is still a difference between snapshots
+    rather than a sum, because followers are a level and not a flow.
     """
-    rows = list(conn.execute(
+    latest = conn.execute(
+        "SELECT date, followers FROM organic_followers WHERE platform = ?"
+        " AND followers IS NOT NULL ORDER BY date DESC LIMIT 1", (platform,),
+    ).fetchone()
+    if latest is None:
+        return None
+
+    window = list(conn.execute(
         "SELECT date, followers FROM organic_followers WHERE platform = ?"
         " AND date BETWEEN ? AND ? AND followers IS NOT NULL ORDER BY date",
         (platform, start.isoformat(), end.isoformat()),
     ))
-    if len(rows) < 2:
-        return None
-    return {"start": int(rows[0]["followers"]), "end": int(rows[-1]["followers"]),
-            "change": int(rows[-1]["followers"]) - int(rows[0]["followers"])}
+    out: Dict[str, Any] = {
+        "count": int(latest["followers"]),
+        "as_of": latest["date"],
+        "change": None,
+    }
+    if len(window) >= 2:
+        out["change"] = int(window[-1]["followers"]) - int(window[0]["followers"])
+        out["start"] = int(window[0]["followers"])
+        out["end"] = int(window[-1]["followers"])
+    return out
 
 
 def upsert_creatives(conn: sqlite3.Connection, rows: Iterable[Dict[str, Any]]) -> int:

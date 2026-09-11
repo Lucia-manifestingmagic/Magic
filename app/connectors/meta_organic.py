@@ -60,7 +60,9 @@ def sync(conn: sqlite3.Connection, start: dt.date, end: dt.date) -> int:
 
     page_id = base.env("FB_PAGE_ID")
     if page_id:
+        rows.extend(_facebook_posts(conn, page_id, token, start, end))
         rows.extend(_facebook_page(conn, page_id, token, start, end))
+        _facebook_followers(conn, page_id, token)
 
     written = db.upsert_organic(conn, rows)
     _followers(conn, ig_user, token)
@@ -176,6 +178,78 @@ def _instagram_account(conn, ig_user: str, token: str, start: dt.date, end: dt.d
         "view_definition": "plays of 1 second or more",
         "provider": "instagram graph api",
     } for day, values in by_day.items()]
+
+
+def _facebook_posts(conn, page_id: str, token: str, start: dt.date, end: dt.date) -> List[Dict]:
+    """Page posts, with the only engagement field this token can actually read.
+
+    Reactions need pages_read_engagement and comments need
+    pages_read_user_content. Both are granted on the token and both are still
+    refused at the endpoint, because the app was never created as a Business
+    type. Shares and post cadence do come through, so those are reported and
+    the rest is left genuinely absent rather than filled with zeros.
+    """
+    from .. import db
+
+    url = "%s/%s/posts" % (_api(), page_id)
+    params = {
+        "fields": "id,created_time,message,permalink_url,shares",
+        "since": start.isoformat(),
+        "until": end.isoformat(),
+        "limit": 100,
+        "access_token": token,
+    }
+
+    out: List[Dict[str, Any]] = []
+    pages = 0
+    while url and pages < 20:
+        try:
+            payload = base.get_json(url, params=params)
+        except base.ConnectorError:
+            break
+        db.store_raw(conn, "meta_organic", "fb/posts", {"since": start.isoformat()}, payload)
+
+        for post in payload.get("data", []):
+            day = (post.get("created_time") or "")[:10]
+            if not day or not (start.isoformat() <= day <= end.isoformat()):
+                continue
+            shares = base.as_int((post.get("shares") or {}).get("count"))
+            out.append({
+                "date": day,
+                "platform": "facebook",
+                "account_id": page_id,
+                "entity_type": "post",
+                "entity_id": post.get("id"),
+                "post_caption": (post.get("message") or "")[:300],
+                "post_url": post.get("permalink_url"),
+                "post_type": "post",
+                "published_at": post.get("created_time"),
+                "shares": shares,
+                "engagements": shares,
+                "view_definition": "1 second or more",
+                "provider": "facebook graph api",
+            })
+        pages += 1
+        url = (payload.get("paging") or {}).get("next")
+        params = None
+    return out
+
+
+def _facebook_followers(conn, page_id: str, token: str) -> None:
+    from .. import db
+    try:
+        payload = base.get_json("%s/%s" % (_api(), page_id),
+                                params={"fields": "followers_count,fan_count",
+                                        "access_token": token})
+    except base.ConnectorError:
+        return
+    count = base.as_int(payload.get("followers_count") or payload.get("fan_count"))
+    if count is None:
+        return
+    db.upsert_followers(conn, [{
+        "date": dt.date.today().isoformat(), "platform": "facebook",
+        "account_id": page_id, "followers": count,
+    }])
 
 
 def _facebook_page(conn, page_id: str, token: str, start: dt.date, end: dt.date) -> List[Dict]:

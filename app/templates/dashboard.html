@@ -455,8 +455,9 @@
       <header class="organic-head">
         <h3>{{ p.label }}</h3>
         {% if p.followers %}
-        <span class="pill pill-{{ 'good' if p.followers.change >= 0 else 'critical' }}">
-          {{ '+' if p.followers.change >= 0 }}{{ p.followers.change | number }} followers
+        <span class="pill {{ 'pill-good' if p.followers.change and p.followers.change > 0 else 'pill-unknown' }}">
+          {{ p.followers.count | number }} followers{% if p.followers.change is not none %},
+          {{ '+' if p.followers.change >= 0 }}{{ p.followers.change | number }}{% endif %}
         </span>
         {% endif %}
       </header>
