@@ -483,11 +483,20 @@
       {% endif %}
 
       {% if p.top_posts %}
+      <p class="organic-posts-head">
+        {% if p.rank_label %}Top posts by {{ p.rank_label }}{% else %}Most recent posts{% endif %}
+      </p>
       <ol class="organic-posts">
         {% for post in p.top_posts[:3] %}
         <li>
-          <span class="organic-post-name">{{ post.caption | truncate(58) }}</span>
-          <span class="organic-post-stat">{{ post.views | compact if post.views is not none else '—' }} views</span>
+          <span class="organic-post-name">{{ post.caption | truncate(54) }}</span>
+          <span class="organic-post-stat">
+            {%- if post.rank_value is not none -%}
+              {{ post.rank_value | compact }} {{ post.rank_label }}
+            {%- else -%}
+              {{ post.date }}
+            {%- endif -%}
+          </span>
         </li>
         {% endfor %}
       </ol>

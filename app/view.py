@@ -292,11 +292,27 @@ def _organic_block(conn: sqlite3.Connection, window: ranges.Window) -> Dict[str,
         account_derived = metrics.derive_organic(account_totals, key)
         follower = db.fetch_follower_change(conn, key, window.start, window.end)
 
-        top = sorted(
-            platform_posts,
-            key=lambda r: (r["views"] if r["views"] is not None else -1),
-            reverse=True,
-        )[:5]
+        # Rank by whatever this platform reports. Sorting by views on a
+        # platform that never returns views picks posts arbitrarily and labels
+        # every one of them with a dash, which reads as a broken list.
+        rank_field, rank_label = "views", "views"
+        if not any(r["views"] is not None for r in platform_posts):
+            if any(r["engagements"] is not None for r in platform_posts):
+                rank_field, rank_label = "engagements", "engagements"
+            elif any(r["likes"] is not None for r in platform_posts):
+                rank_field, rank_label = "likes", "likes"
+            else:
+                rank_field, rank_label = None, ""
+
+        if rank_field:
+            top = sorted(
+                platform_posts,
+                key=lambda r: (r[rank_field] if r[rank_field] is not None else -1),
+                reverse=True,
+            )[:5]
+        else:
+            # Nothing to rank on, so show the most recent instead of pretending.
+            top = sorted(platform_posts, key=lambda r: r["date"], reverse=True)[:5]
 
         # Build the stat row from what this platform actually returns rather
         # than a fixed set. A card of four dashes tells the reader nothing and
@@ -341,6 +357,7 @@ def _organic_block(conn: sqlite3.Connection, window: ranges.Window) -> Dict[str,
             "view_definition": derived["view_definition"].reason,
             "engagement_basis": derived["engagement_basis"].reason,
             "followers": follower,
+            "rank_label": rank_label,
             "top_posts": [{
                 "id": r["entity_id"],
                 "caption": r["post_caption"] or "(no caption)",
@@ -349,6 +366,8 @@ def _organic_block(conn: sqlite3.Connection, window: ranges.Window) -> Dict[str,
                 "date": r["date"],
                 "views": r["views"],
                 "engagements": r["engagements"],
+                "rank_value": r[rank_field] if rank_field else None,
+                "rank_label": rank_label,
             } for r in top],
         })
 
