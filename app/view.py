@@ -298,9 +298,42 @@ def _organic_block(conn: sqlite3.Connection, window: ranges.Window) -> Dict[str,
             reverse=True,
         )[:5]
 
+        # Build the stat row from what this platform actually returns rather
+        # than a fixed set. A card of four dashes tells the reader nothing and
+        # looks like the dashboard is broken, when the truth is that the
+        # platform will not give us those numbers.
+        stats = []
+        def add(label_text, metric, kind, tip=""):
+            if metric.value is not None:
+                stats.append({"label": label_text, "value": _metric_json(metric),
+                              "kind": kind, "tip": tip})
+
+        add("Posts", derived["posts"], "num")
+        add("Views", derived["views"], "compact",
+            "This platform counts a view as %s." % derived["view_definition"].reason)
+        add("Engagements", derived["engagements"], "num",
+            "Likes, comments and shares added together.")
+        add("Engagement rate", derived["engagement_rate"], "pct",
+            "Engagements divided by %s." % derived["engagement_basis"].reason)
+        add("Likes", derived["likes"], "num")
+        add("Comments", derived["comments"], "num")
+        add("Shares", derived["shares"], "num")
+        add("Link clicks", account_derived["link_clicks"], "num")
+        add("Profile views", account_derived["profile_views"], "num")
+
+        # Say plainly what is missing and why, rather than leaving blanks.
+        unavailable = []
+        for name, nice in (("views", "Views"), ("reach", "Reach"),
+                           ("likes", "Likes"), ("comments", "Comments")):
+            metric = derived.get(name)
+            if metric is not None and metric.value is None:
+                unavailable.append(nice)
+
         platforms.append({
             "key": key,
             "label": label,
+            "stats": stats[:6],
+            "unavailable": unavailable,
             "metrics": _metrics_json(derived),
             "profile_views": _metric_json(account_derived["profile_views"]),
             "link_clicks": _metric_json(account_derived["link_clicks"]),

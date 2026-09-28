@@ -463,19 +463,24 @@
       </header>
 
       <dl class="organic-stats">
+        {% for stat in p.stats %}
         <div>
-          <dt>Views {{ tip('This platform counts a view as ' ~ p.view_definition ~ '. Never compare it to another platform\'s view count.') }}</dt>
-          <dd>{{ m(p.metrics.views, 'compact') }}</dd>
+          <dt>{{ stat.label }}{% if stat.tip %} {{ tip(stat.tip) }}{% endif %}</dt>
+          <dd>{{ m(stat.value, stat.kind) }}</dd>
         </div>
-        <div><dt>Posts</dt><dd>{{ m(p.metrics.posts, 'num') }}</dd></div>
-        <div>
-          <dt>Engagement {{ tip('Engagements divided by ' ~ p.engagement_basis ~ ' for this platform. Impressions are deliberately not used, since that rewards repeat delivery rather than interest.') }}</dt>
-          <dd>{{ m(p.metrics.engagement_rate, 'pct') }}</dd>
-        </div>
-        <div><dt>Link clicks</dt><dd>{{ m(p.link_clicks, 'num') }}</dd></div>
+        {% endfor %}
       </dl>
 
+      {% if p.metrics.views.value is not none %}
       <p class="organic-def">A view here means {{ p.view_definition }}.</p>
+      {% endif %}
+
+      {% if p.unavailable %}
+      <p class="organic-missing">
+        Not available from this platform: {{ p.unavailable | join(', ') }}.
+        {{ tip('These need permissions Meta will not grant to this app type. They are left blank rather than shown as zero.') }}
+      </p>
+      {% endif %}
 
       {% if p.top_posts %}
       <ol class="organic-posts">
