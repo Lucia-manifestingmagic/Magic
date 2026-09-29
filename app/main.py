@@ -12,6 +12,7 @@ import datetime as dt
 import json
 import os
 import pathlib
+import time
 from typing import Any, Optional
 
 try:  # optional: the app runs fine without a .env in mock mode
@@ -21,7 +22,14 @@ try:  # optional: the app runs fine without a .env in mock mode
 except ImportError:  # pragma: no cover
     pass
 
+import asyncio
+import base64
+import secrets
+import threading
+
 from fastapi import FastAPI, Query, Request
+from fastapi.responses import Response
+from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -32,7 +40,44 @@ from . import db, fixtures, ranges, view
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 LIVE_DATA = os.environ.get("LIVE_DATA", "0").strip() in {"1", "true", "yes"}
 
+DASHBOARD_USER = os.environ.get("DASHBOARD_USER", "").strip()
+DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "").strip()
+
+
+class BasicAuth(BaseHTTPMiddleware):
+    """Password-gate the whole dashboard when credentials are configured.
+
+    The page carries the client's spend, revenue and margins, so it must not sit
+    on an open URL. Locally no credentials are set and this does nothing, which
+    keeps development friction-free; in deployment both are set and every route
+    requires them. Comparison is constant-time so the password cannot be guessed
+    by timing.
+    """
+
+    async def dispatch(self, request, call_next):
+        if not (DASHBOARD_USER and DASHBOARD_PASSWORD):
+            return await call_next(request)
+        if request.url.path == "/healthz":
+            return await call_next(request)
+
+        header = request.headers.get("authorization", "")
+        if header.startswith("Basic "):
+            try:
+                decoded = base64.b64decode(header[6:]).decode("utf-8")
+                user, _, password = decoded.partition(":")
+                if (secrets.compare_digest(user, DASHBOARD_USER)
+                        and secrets.compare_digest(password, DASHBOARD_PASSWORD)):
+                    return await call_next(request)
+            except Exception:
+                pass
+        return Response(
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="Noble Key Supply dashboard"'},
+        )
+
+
 app = FastAPI(title="Noble Key Supply — paid media dashboard")
+app.add_middleware(BasicAuth)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
@@ -135,6 +180,30 @@ def _startup() -> None:
             db.set_setting(conn, "data_mode", "live")
     finally:
         conn.close()
+
+
+def _background_sync() -> None:
+    """Keep the data fresh from inside the container.
+
+    On a server this replaces the laptop scheduler entirely, which is the point:
+    the client's link stays current whether or not anyone's Mac is awake.
+    """
+    from . import sync as sync_module
+
+    hours = float(os.environ.get("SYNC_INTERVAL_HOURS", "6") or 6)
+    while True:
+        try:
+            sync_module.run(days=28, only=[], backfill=False)
+        except Exception as exc:  # noqa: BLE001 - never kill the web server
+            print("scheduled sync failed: %s" % exc, flush=True)
+        time.sleep(hours * 3600)
+
+
+@app.on_event("startup")
+def _start_scheduler() -> None:
+    if os.environ.get("ENABLE_BACKGROUND_SYNC", "").strip() in {"1", "true", "yes"}:
+        threading.Thread(target=_background_sync, daemon=True).start()
+        print("background sync enabled", flush=True)
 
 
 @app.get("/healthz")

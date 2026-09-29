@@ -1,0 +1,19 @@
+app = "noble-key-dashboard"
+primary_region = "sjc"          # San Jose, closest to San Diego
+
+[build]
+
+[env]
+  PORT = "8080"
+  SYNC_INTERVAL_HOURS = "6"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false     # stays warm, so his phone never waits
+  auto_start_machines = true
+  min_machines_running = 1
+
+[mounts]
+  source = "dashboard_data"
+  destination = "/data"
