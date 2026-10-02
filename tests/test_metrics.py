@@ -270,7 +270,14 @@ def test_verdict_is_critical_well_above_the_benchmark():
 
 
 def test_verdict_holds_just_above_the_benchmark():
-    result = _verdict_for(6000.0, 10.0)  # $600 CAC, inside the 1.15x band
+    """Just over the line is "watch", not "cut".
+
+    Derived from the configured benchmark rather than a literal, so the test
+    exercises the band logic and does not break when a deployment configures a
+    different client's number.
+    """
+    cac = C.CAC_BENCHMARK * 1.09          # inside the 1.15x warn band
+    result = _verdict_for(cac * 10.0, 10.0)
     assert result.state == metrics.STATE_WARNING
 
 

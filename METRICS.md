@@ -75,13 +75,13 @@ Deltas compare against the equal-length window immediately before.
 
 ## Why cost per new account reads "Unavailable"
 
-A purchase is not a new account. Noble Key Supply sells wholesale to
-locksmiths, so most purchase events are **repeat orders from existing
+A purchase is not a new account. the client sells wholesale to
+trades, so most purchase events are **repeat orders from existing
 customers**. Dividing spend by purchases answers a question nobody asked.
 
 The size of the error is not subtle. Over Dec 2024 – Sep 2025 the account
-spent $13,329 against 3,105 purchases, which is **$4.29 per purchase**. Placed
-beside the $550 cold-sales benchmark that reads as 128× better than human
+spent a nine-month run cost roughly $4 per purchase. Placed
+beside the the benchmark cold-sales benchmark that reads as 128× better than human
 sales, and anyone acting on it would be acting on a measurement artefact.
 
 So `cac` is only computed where `conversion_source = 'verified_account'`.
@@ -97,7 +97,7 @@ else in the metrics layer changes.
 
 ROAS is measured from platform-reported revenue and stands on its own, so a
 channel without a verified account event is judged against the modelled
-break-even instead of against the $550 benchmark:
+break-even instead of against the the benchmark benchmark:
 
 | Condition | State |
 |---|---|
@@ -119,9 +119,9 @@ reach the data.
 
 | Constant | Value | Where it appears |
 |---|---|---|
-| `CAC_BENCHMARK` | $550 | Reference line on the CAC chart; the green/amber/red boundary |
+| `CAC_BENCHMARK` | the benchmark | Reference line on the CAC chart; the green/amber/red boundary |
 | `CAC_TARGET` | $500 | The plan target; below it, the recommendation becomes "increase budget" |
-| `CAC_WARN_MULTIPLIER` | 1.15 | Above $550 but within $632.50 is amber, not red |
+| `CAC_WARN_MULTIPLIER` | 1.15 | Above the benchmark but within $632.50 is amber, not red |
 | `GROSS_MARGIN` | 40% | Profit-adjusted ROAS |
 | `ACCOUNT_LTV_GP` | $4,800 | LTV : CAC ratio |
 | `ACCOUNT_MONTHLY_GP` | $240 | Payback months |
@@ -140,11 +140,11 @@ Per channel, in this order:
 | Condition | State | Recommendation |
 |---|---|---|
 | No spend | unknown | Nothing to decide |
-| No conversions **and** spend < $550 | unknown | Too early — less than one benchmark CAC spent |
-| No conversions **and** spend ≥ $550 | critical | Pause and diagnose; check tracking first |
+| No conversions **and** spend < the benchmark | unknown | Too early — less than one benchmark CAC spent |
+| No conversions **and** spend ≥ the benchmark | critical | Pause and diagnose; check tracking first |
 | CAC ≤ $500 | good | Increase budget |
-| $500 < CAC ≤ $550 | good | Hold and tighten before scaling |
-| $550 < CAC ≤ $632.50 | warning | Hold flat; cut the weakest ads |
+| $500 < CAC ≤ the benchmark | good | Hold and tighten before scaling |
+| the benchmark < CAC ≤ $632.50 | warning | Hold flat; cut the weakest ads |
 | CAC > $632.50 | critical | Cut budget and rebuild |
 
 The "no conversions, but under one benchmark of spend" case exists because zero
@@ -214,11 +214,11 @@ window it was fetched for, and frequency is computed **only** when a reach row
 exists for exactly the window on screen. Otherwise it shows `—` with that
 reason.
 
-Blended frequency across Meta and YouTube is **never** shown: the same locksmith
+Blended frequency across Meta and YouTube is **never** shown: the same trade
 may see both, and neither API reports the overlap.
 
 Above `FREQUENCY_WARN` (3.0) the channel card raises a fatigue flag. The
-addressable universe here — automotive locksmiths in the US — is small, so
+addressable universe here — automotive trades in the US — is small, so
 frequency climbs fast.
 
 ## Pacing
@@ -248,7 +248,7 @@ action on each platform:
 - Google Ads — the conversion actions named in `GOOGLE_ADS_CONVERSION_ACTIONS`,
   or all conversions if left blank.
 
-A purchase is not the same thing as a **new locksmith account**: repeat orders
+A purchase is not the same thing as a **new trade account**: repeat orders
 from existing accounts inflate the count and therefore understate CAC. Every row
 carries a `conversion_source` column (`purchase_proxy` today), and the data
 health footer shows a **"proxied from purchases"** tag whenever any row in view

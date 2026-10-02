@@ -351,8 +351,11 @@ def _organic_block(conn: sqlite3.Connection, window: ranges.Window) -> Dict[str,
             "stats": stats[:6],
             "unavailable": unavailable,
             "metrics": _metrics_json(derived),
+            # Meta retired profile_views and website_clicks in v21, so these
+            # are only ever populated by platforms that still report them.
             "profile_views": _metric_json(account_derived["profile_views"]),
             "link_clicks": _metric_json(account_derived["link_clicks"]),
+            "has_link_clicks": account_derived["link_clicks"].value is not None,
             "follows": _metric_json(account_derived["follows"]),
             "view_definition": derived["view_definition"].reason,
             "engagement_basis": derived["engagement_basis"].reason,

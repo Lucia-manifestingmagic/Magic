@@ -29,7 +29,10 @@ LABEL = "Meta organic (IG + FB)"
 # Requested per media object. Anything the API rejects is dropped and retried
 # without it, so one retired metric cannot take the sync down.
 IG_MEDIA_METRICS = ["reach", "likes", "comments", "shares", "saved", "total_interactions", "views"]
-IG_ACCOUNT_METRICS = ["reach", "profile_views", "website_clicks", "accounts_engaged"]
+# profile_views and website_clicks were retired in Graph API v21 (Jan 2025).
+# One retired name fails the whole insights call, so they are gone rather than
+# merely unavailable.
+IG_ACCOUNT_METRICS = ["reach", "accounts_engaged"]
 
 
 def _token() -> str:
@@ -172,8 +175,8 @@ def _instagram_account(conn, ig_user: str, token: str, start: dt.date, end: dt.d
         "date": day, "platform": "instagram", "account_id": ig_user,
         "entity_type": "account", "entity_id": ig_user,
         "reach": values.get("reach"),
-        "profile_views": values.get("profile_views"),
-        "link_clicks": values.get("website_clicks"),
+        "profile_views": None,   # retired by Meta in v21
+        "link_clicks": None,     # retired by Meta in v21
         "engagements": values.get("accounts_engaged"),
         "view_definition": "plays of 1 second or more",
         "provider": "instagram graph api",

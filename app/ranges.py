@@ -4,7 +4,7 @@ One rule, applied everywhere: **every window ends on the last complete day.**
 
 Both platforms are still writing to today's numbers while today is happening,
 and a partial day drags CAC upward every morning. Reporting through yesterday
-means the number Sean sees at 8am is the same number he saw at 8pm, and the UI
+means the number the client sees at 8am is the same number he saw at 8pm, and the UI
 states the end date rather than saying a vague "today".
 """
 

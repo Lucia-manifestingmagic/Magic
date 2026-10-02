@@ -1,4 +1,4 @@
-"""Business constants for Noble Key Supply.
+"""Business constants for the client this instance is configured for.
 
 Every number here came from the client and drives a decision on the dashboard.
 Nothing downstream hardcodes a value: change it here (or in .env) and the whole
@@ -44,34 +44,35 @@ def _s(name: str, default: str) -> str:
     return os.environ.get(name, "").strip() or default
 
 
-CLIENT_NAME: str = _s("CLIENT_NAME", _demo("Noble Key Supply", "Acme Wholesale Supply"))
-CLIENT_SHORT: str = _s("CLIENT_SHORT", _demo("NKS", "ACME"))
-CLIENT_TAGLINE: str = _s(
-    "CLIENT_TAGLINE",
-    _demo("Wide selection of car keys at wholesale prices",
-          "Sample data — this is a portfolio demo, not a real account."),
-)
-CLIENT_CITY: str = _s("CLIENT_CITY", _demo("San Diego, CA", "Anywhere, USA"))
-CLIENT_URL: str = _s("CLIENT_URL", _demo("noblekeysupply.com", "example.com"))
+CLIENT_NAME: str = _s("CLIENT_NAME", "Acme Wholesale Supply")
+CLIENT_SHORT: str = _s("CLIENT_SHORT", "ACME")
+CLIENT_TAGLINE: str = _s("CLIENT_TAGLINE", "Sample data — portfolio demo, not a real account.")
+CLIENT_CITY: str = _s("CLIENT_CITY", "Anywhere, USA")
+CLIENT_URL: str = _s("CLIENT_URL", "example.com")
 
 
 # --- The pass/fail line ----------------------------------------------------
-# Sean's proven all-in cost to acquire a new locksmith account through human
-# cold sales. Paid media only earns more budget when it beats this.
-CAC_BENCHMARK: float = _f("CAC_BENCHMARK", _demo(550.0, 500.0))
+# The client's proven all-in cost to acquire a new account through human cold
+# sales. Paid media only earns more budget when it beats this.
+#
+# The defaults below are deliberately round placeholders. This repository is
+# public, and a client's acquisition cost, margin and revenue are commercially
+# sensitive. The real figures live in .env locally and in the host's secret
+# store in production, and override these at import.
+CAC_BENCHMARK: float = _f("CAC_BENCHMARK", 500.0)
 
 # What the media plan is modelled against — tighter than the benchmark, so
 # there is headroom before the benchmark is threatened.
-CAC_TARGET: float = _f("CAC_TARGET", _demo(500.0, 450.0))
+CAC_TARGET: float = _f("CAC_TARGET", 450.0)
 
 # How far above the benchmark still counts as "watch it" rather than "cut it".
 CAC_WARN_MULTIPLIER: float = _f("CAC_WARN_MULTIPLIER", 1.15)
 
 # --- Unit economics --------------------------------------------------------
-GROSS_MARGIN: float = _f("GROSS_MARGIN", _demo(0.40, 0.42))
-BASELINE_MONTHLY_REV: float = _f("BASELINE_MONTHLY_REV", _demo(240_000.0, 250_000.0))
-ACCOUNT_LTV_GP: float = _f("ACCOUNT_LTV_GP", _demo(4_800.0, 5_000.0))
-ACCOUNT_MONTHLY_GP: float = _f("ACCOUNT_MONTHLY_GP", _demo(240.0, 250.0))
+GROSS_MARGIN: float = _f("GROSS_MARGIN", 0.40)
+BASELINE_MONTHLY_REV: float = _f("BASELINE_MONTHLY_REV", 250_000.0)
+ACCOUNT_LTV_GP: float = _f("ACCOUNT_LTV_GP", 5_000.0)
+ACCOUNT_MONTHLY_GP: float = _f("ACCOUNT_MONTHLY_GP", 250.0)
 
 # --- Spend plan ------------------------------------------------------------
 # (through month N inclusive, monthly budget). The last entry runs forever.
@@ -92,13 +93,16 @@ BREAKEVEN_ROAS_BY_SPEND: List[Tuple[float, float]] = [
 # --- Historical baselines, for context only --------------------------------
 # These are prior-period Google Ads figures the client already knows. They are
 # comparison context, never mixed into the paid-social/YouTube numbers.
+# Prior-period figures the client already knows, used as comparison context
+# only and never mixed into measured numbers. Placeholders here for the same
+# reason as above; real values come from the environment.
 HISTORICAL = {
-    "google_blended_roas": 11.94,
-    "branded_search_roas": 63.94,
-    "pmax_roas": 7.89,
-    "shopping_roas": 1.03,  # broken campaign, being rebuilt
-    "site_aov": 160.0,
-    "site_conversion_rate": 0.0253,
+    "google_blended_roas": _f("HIST_GOOGLE_ROAS", 10.0),
+    "branded_search_roas": _f("HIST_BRANDED_ROAS", 50.0),
+    "pmax_roas": _f("HIST_PMAX_ROAS", 8.0),
+    "shopping_roas": _f("HIST_SHOPPING_ROAS", 1.0),
+    "site_aov": _f("HIST_SITE_AOV", 150.0),
+    "site_conversion_rate": _f("HIST_SITE_CVR", 0.025),
 }
 
 # --- Program timing --------------------------------------------------------

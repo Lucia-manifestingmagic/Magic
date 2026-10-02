@@ -145,7 +145,7 @@ def _client_name_from_env(path=".env"):
                 value = line.split("=", 1)[1].strip()
                 if value:
                     return value
-    return "Noble Key Supply"
+    return "the client"
 
 
 def find_client_json(explicit=None):
@@ -232,7 +232,7 @@ def main():
 
     print("\nOpening your browser.")
     print("Sign in as the account that MANAGES the channel, and if Google offers")
-    print("a list, choose the Noble Key Supply channel rather than your own.\n")
+    print("a list, choose the the client channel rather than your own.\n")
     print("If the browser does not open, paste this in yourself:\n%s\n" % auth_url)
     webbrowser.open(auth_url)
 

@@ -72,11 +72,11 @@ class BasicAuth(BaseHTTPMiddleware):
                 pass
         return Response(
             status_code=401,
-            headers={"WWW-Authenticate": 'Basic realm="Noble Key Supply dashboard"'},
+            headers={"WWW-Authenticate": 'Basic realm="the client dashboard"'},
         )
 
 
-app = FastAPI(title="Noble Key Supply — paid media dashboard")
+app = FastAPI(title="the client — paid media dashboard")
 app.add_middleware(BasicAuth)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))

@@ -1,14 +1,14 @@
-# Noble Key Supply — paid media dashboard
+# the client — paid media dashboard
 
-A client-facing dashboard for Noble Key Supply's two paid channels: **Meta**
+A client-facing dashboard for the client's two paid channels: **Meta**
 (Facebook/Instagram) and **YouTube** (video campaigns in Google Ads).
 
 It is built around one question:
 
-> **Is each channel acquiring customers below $550, and should I put more money
+> **Is each channel acquiring customers below the benchmark, and should I put more money
 > into it?**
 
-$550 is the client's proven all-in cost to acquire a new locksmith account
+the benchmark is the client's proven all-in cost to acquire a new trade account
 through human cold sales. Everything above the fold is judged against it.
 
 ---
@@ -154,7 +154,7 @@ endpoints.
 1. **Business Manager → Business settings → Users → System Users.** Create a
    system user (or use an existing one) and give it access to the ad account
    with the **Manage campaigns** or **View performance** role.
-2. **Assign assets** → add the Noble Key Supply ad account to that system user.
+2. **Assign assets** → add the the client ad account to that system user.
 3. **Generate new token.** Select your app, and tick the **`ads_read`** scope.
    `ads_management` is not needed — this dashboard only reads.
    - Choose a **60-day** or **never-expiring** token. A short token will expire
@@ -247,7 +247,7 @@ health footer on the page, not buried in a log.
    card: current CAC, the state, and one plain-language recommendation.
 2. **Spend pacing.** Month-to-date against plan, projected month end, and what is
    left per day.
-3. **Trends.** Cost per account, ROAS, and daily spend. The $550 benchmark and
+3. **Trends.** Cost per account, ROAS, and daily spend. The the benchmark benchmark and
    the break-even ROAS are drawn on as reference lines. Toggle between compare,
    blended, and each channel. Each chart has a **Table** button — every value is
    readable as text, not only as a hovered tooltip.

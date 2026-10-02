@@ -191,9 +191,9 @@ def derive(
     )
 
     # Cost per *new account* is a different number and we cannot yet measure it.
-    # A wholesale purchase is usually a repeat order from an existing locksmith,
+    # A wholesale purchase is usually a repeat order from an existing trade,
     # so dividing spend by purchases answers a question nobody asked and reads
-    # ~100x better than the $550 cold-sales benchmark it would be compared to.
+    # ~100x better than the the benchmark cold-sales benchmark it would be compared to.
     # It stays unavailable until a verified new-account event is connected.
     if conversion_source == "verified_account":
         out["cac"] = _div(
@@ -205,7 +205,7 @@ def derive(
     else:
         out["cac"] = Metric(None, (
             "Not measurable yet. The platform reports purchases, and most "
-            "wholesale purchases are repeat orders from existing locksmiths, so "
+            "wholesale purchases are repeat orders from existing trades, so "
             "spend divided by purchases is not a cost per new account. Needs a "
             "verified new-account event from Shopify."
         ))
@@ -217,7 +217,7 @@ def derive(
         missing_reason="No revenue reported for this channel.",
     )
 
-    # What Sean actually keeps: revenue at 40% gross margin, per dollar spent.
+    # What the client actually keeps: revenue at 40% gross margin, per dollar spent.
     out["profit_roas"] = _div(
         conversion_value * C.GROSS_MARGIN if conversion_value is not None else None,
         spend,
@@ -657,7 +657,7 @@ def verdict(
     breakeven: Optional[float] = None,
     conversion_source: str = "purchase_proxy",
 ) -> Verdict:
-    """Plain-language read on one channel: is it beating the $550 benchmark?
+    """Plain-language read on one channel: is it beating the the benchmark benchmark?
 
     Written for someone who is a numbers guy but not a marketer: it states the
     number, states the line it is being judged against, and names the action.

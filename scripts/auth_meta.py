@@ -29,7 +29,7 @@ import urllib.request
 VERSION = os.environ.get("META_API_VERSION", "v21.0")
 API = "https://graph.facebook.com/%s" % VERSION
 
-CLIENT = os.environ.get("CLIENT_NAME", "").strip() or "Noble Key Supply"
+CLIENT = os.environ.get("CLIENT_NAME", "").strip() or "the client"
 
 NEEDED = {
     "ads_read": "Meta ads spend and conversions",
@@ -195,7 +195,7 @@ def browser_login(app_id, app_secret):
     threading.Thread(target=server.handle_request, daemon=True).start()
 
     print("Requesting: %s" % ", ".join(_scopes()))
-    print("\nOpening Facebook. Approve, and choose Noble Key Supply when asked")
+    print("\nOpening Facebook. Approve, and choose the client when asked")
     print("which Pages and Instagram accounts to allow.\n")
     print("If the browser does not open, paste this:\n%s\n" % dialog)
     webbrowser.open(dialog)
